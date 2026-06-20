@@ -91,8 +91,10 @@ export function updateTopBar() {
 // ============================================================
 function buildPreview() {
   clearScene();
-  renderer.setClearColor(SP_PALETTE.sky);
-  scene.fog = new THREE.Fog(SP_PALETTE.fog, 55, 240);
+  // Premium navy sky for the menu — matches the loading-screen brand identity
+  // (dark navy + mint). Race arenas keep their bright sky for visibility.
+  renderer.setClearColor(SP_PALETTE.menuSky);
+  scene.fog = new THREE.Fog(SP_PALETTE.menuFog, 55, 240);
   const group = new THREE.Group(); scene.add(group);
 
   // ── SKY DECOR ───────────────────────────────────────────────────────

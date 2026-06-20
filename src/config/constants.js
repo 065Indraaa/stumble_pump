@@ -76,8 +76,14 @@ export const COLORS = {
 
 // Global unified Stumble Pump AAA palette for all arenas (No neon, pastel/soft)
 export const SP_PALETTE = {
-  sky: 0x87CEFA,      // Soft light sky blue
+  sky: 0x87CEFA,      // Soft light sky blue (race arenas — bright for gameplay visibility)
   fog: 0xE0F6FF,      // Very pale blue
+  // Premium navy sky for MENU + LOBBY — matches the loading screen brand
+  // identity (dark navy + mint). Race arenas keep the bright sky above.
+  menuSky: 0x1B2A4E,  // deep navy blue (loading-screen match)
+  menuFog: 0x0E1830,  // darker navy fog
+  lobbySky: 0x2A3A5E,// slightly lighter navy for the lobby
+  lobbyFog: 0x1A2540,
   floor1: 0x4A90E2,   // Soft matte blue
   floor2: 0xFFD23F,   // Warm pastel yellow/gold
   edge: 0xFF8A3D,     // Soft orange

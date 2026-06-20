@@ -32,8 +32,8 @@ function addCyl(parent, rt, rb, h, seg, color, x = 0, y = 0, z = 0) {
 
 export function buildLobby() {
   clearScene();
-  renderer.setClearColor(SP_PALETTE.sky);
-  scene.fog = new THREE.Fog(SP_PALETTE.fog, 90, 280);
+  renderer.setClearColor(SP_PALETTE.lobbySky);
+  scene.fog = new THREE.Fog(SP_PALETTE.lobbyFog, 90, 280);
   const group = new THREE.Group(); scene.add(group);
 
   // ── SKY ────────────────────────────────────────────────────────────────

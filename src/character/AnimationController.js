@@ -83,7 +83,7 @@ export class AnimationController {
   _emoteDance(t) {
     const b = this.b;
     // side-to-side hip sway + raised alternating arms (disco)
-    b.hips.position.y = 0.92 + Math.abs(Math.sin(t * 6)) * 0.06;
+    b.hips.position.y = 0.56 + Math.abs(Math.sin(t * 6)) * 0.06;
     b.hips.position.x = Math.sin(t * 3) * 0.06;
     this._lerpRot(b.hips, 0, Math.sin(t * 3) * 0.25, 0, 0.2);
     this._lerpRot(b.l_upperarm, -2.6, 0, 0.4 + Math.sin(t * 6) * 0.3, 0.25);
@@ -100,7 +100,7 @@ export class AnimationController {
     this._lerpRot(b.r_lowerarm, -0.3 + Math.sin(t * 8) * 0.5, 0, 0, 0.3);
     this._lerpRot(b.l_upperarm, 0.1, 0, 0.15, 0.2);
     this._lerpRot(b.head, 0, Math.sin(t * 2) * 0.15, 0, 0.2);
-    b.hips.position.y = 0.92 + Math.sin(t * 4) * 0.02;
+    b.hips.position.y = 0.56 + Math.sin(t * 4) * 0.02;
     this.rig.setFace('celebrating');
   }
   _emoteTaunt(t) {
@@ -112,7 +112,7 @@ export class AnimationController {
     this._lerpRot(b.r_lowerarm, -1.2, 0, 0, 0.25);
     this._lerpRot(b.chest, -0.2, 0, 0, 0.2);
     this._lerpRot(b.head, -0.15, Math.sin(t * 5) * 0.2, Math.sin(t * 2) * 0.1, 0.25);
-    b.hips.position.y = 0.92;
+    b.hips.position.y = 0.56;
     this.rig.setFace('celebrating');
   }
   _emotePoint(t) {
@@ -123,7 +123,7 @@ export class AnimationController {
     this._lerpRot(b.l_upperarm, 0.1, 0, 0.2, 0.2);
     this._lerpRot(b.chest, -0.15, Math.sin(t * 1.5) * 0.1, 0, 0.2);
     this._lerpRot(b.head, 0, Math.sin(t * 1.5) * 0.1, 0, 0.2);
-    b.hips.position.y = 0.92;
+    b.hips.position.y = 0.56;
     this.rig.setFace('normal');
   }
   _emoteFlex(t) {
@@ -134,7 +134,7 @@ export class AnimationController {
     this._lerpRot(b.l_lowerarm, -2.0, 0, 0, 0.25);
     this._lerpRot(b.r_lowerarm, -2.0, 0, 0, 0.25);
     this._lerpRot(b.chest, -0.25, 0, 0, 0.2);
-    b.hips.position.y = 0.92 + Math.abs(Math.sin(t * 4)) * 0.04;
+    b.hips.position.y = 0.56 + Math.abs(Math.sin(t * 4)) * 0.04;
     this.rig.setFace('celebrating');
   }
   _emoteCry(t) {
@@ -147,7 +147,7 @@ export class AnimationController {
     this._lerpRot(b.r_lowerarm, -1.8, 0, 0, 0.25);
     this._lerpRot(b.head, 0.4, 0, 0, 0.2);
     b.hips.position.x = Math.sin(t * 14) * 0.012;
-    b.hips.position.y = 0.9;
+    b.hips.position.y = 0.5;
     this.rig.setFace('shocked');
   }
 
@@ -155,7 +155,7 @@ export class AnimationController {
     const b = this.b;
     // gentle breathing — slightly deeper than before, asymmetric inhale/exhale
     const breath = Math.sin(t * 1.1);
-    b.hips.position.y = 0.92 + breath * 0.035;
+    b.hips.position.y = 0.56 + breath * 0.035;
     // subtle weight shift left/right so the pose isn't perfectly symmetrical
     b.hips.position.x = Math.sin(t * 0.5) * 0.015;
     this._lerpRot(b.head, Math.sin(t * 0.7) * 0.05, Math.sin(t * 0.4) * 0.18, 0, 0.1);
@@ -188,7 +188,7 @@ export class AnimationController {
     // ---- VERTICAL BOB: double-lobe gait (heel-strike + toe-off) ----
     // abs(sin) gives 2 bumps per cycle — natural asymmetric running bounce
     const bob = Math.abs(s);
-    b.hips.position.y = 0.92 + bob * 0.085;
+    b.hips.position.y = 0.56 + bob * 0.085;
     // ---- LATERAL SWAY: pelvis rocks side-to-side, opposite to stride ----
     b.hips.position.x = c * 0.04;
     // pelvis counter-rotates slightly against the shoulders (natural gait)
@@ -292,7 +292,7 @@ export class AnimationController {
     const b = this.b;
     this._lerpRot(b.l_upperarm, -2.6, 0, 0.3 + Math.sin(t * 4) * 0.3, 0.2);
     this._lerpRot(b.r_upperarm, -2.6, 0, -0.3 - Math.sin(t * 4) * 0.3, 0.2);
-    b.hips.position.y = 0.92 + Math.abs(Math.sin(t * 4)) * 0.12;
+    b.hips.position.y = 0.56 + Math.abs(Math.sin(t * 4)) * 0.12;
     this._lerpRot(b.hips, 0, Math.sin(t * 2) * 0.3, 0, 0.2);
     this.rig.setFace('celebrating');
   }
