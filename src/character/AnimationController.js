@@ -24,10 +24,29 @@ export class AnimationController {
     this.lerpK = rig.jerky ? 0.55 : 0.25;
     this.ragVel = new THREE.Vector3();
     this.ragSpin = new THREE.Vector3();
+    // cross-state blend state
+    this._blendFrom = null;
+    this._blendT = 0;
+    this._blendDur = 0.15;
+    // snapshot of bone rotations at the moment of a state switch (for blend)
+    this._blendSnapshot = null;
   }
 
   set(state) {
     if (this.state === state) return;
+    // Cross-fade: snapshot all bone rotations NOW (end of the old pose), then
+    // blend them into the new state's target over ~0.15s. Kills the snap.
+    this._blendFrom = this.state;
+    this._blendT = 0;
+    this._blendDur = 0.15;
+    this._blendSnapshot = {};
+    const keys = ['hips','chest','head','neck','spine',
+      'l_upperarm','r_upperarm','l_lowerarm','r_lowerarm',
+      'l_upperleg','r_upperleg','l_lowerleg','r_lowerleg'];
+    for (const k of keys) {
+      const bone = this.b[k];
+      if (bone) this._blendSnapshot[k] = { x: bone.rotation.x, y: bone.rotation.y, z: bone.rotation.z };
+    }
     if (state === 'jump') this.jumpT = 0;
     if (state === 'dive') this.diveT = 0;
     if (state === 'land') this.landT = 0;
@@ -73,6 +92,25 @@ export class AnimationController {
       case 'point':     this._emotePoint(t); break;
       case 'flex':      this._emoteFlex(t); break;
       case 'cry':       this._emoteCry(t); break;
+    }
+    // ---- Cross-state blend: pull bones back toward the pre-switch snapshot,
+    //      fading out over _blendDur. This is what makes transitions feel
+    //      smooth instead of snapping pose-to-pose. ----
+    if (this._blendSnapshot && this._blendDur > 0) {
+      this._blendT += dt;
+      const a = Math.max(0, 1 - this._blendT / this._blendDur); // 1→0
+      if (a <= 0) {
+        this._blendSnapshot = null;   // blend done
+      } else {
+        const snap = this._blendSnapshot;
+        for (const k in snap) {
+          const bone = this.b[k]; if (!bone) continue;
+          const s = snap[k];
+          bone.rotation.x = bone.rotation.x * (1 - a) + s.x * a;
+          bone.rotation.y = bone.rotation.y * (1 - a) + s.y * a;
+          bone.rotation.z = bone.rotation.z * (1 - a) + s.z * a;
+        }
+      }
     }
     this._skinFx(t);
     this._updateStars(dt);
@@ -194,19 +232,27 @@ export class AnimationController {
     // pelvis counter-rotates slightly against the shoulders (natural gait)
     this._lerpRot(b.hips, -sp * 0.06, -c * 0.12 * sp, 0, 0.2);
     // ---- LEGS: smooth sinusoidal swing, slight per-limb asymmetry ----
-    // (broke the perfect mirror by offsetting phase by a fraction)
     this._lerpRot(b.l_upperleg, s * amp, 0, 0.04, this.lerpK);
     this._lerpRot(b.r_upperleg, -s * amp, 0, -0.04, this.lerpK);
-    // knees bend smoothly on the back-swing (no sharp max(0,cos) snap)
-    this._lerpRot(b.l_lowerleg, Math.max(0, -c) * 0.9 + 0.1, 0, 0, this.lerpK);
-    this._lerpRot(b.r_lowerleg, Math.max(0, c) * 0.9 + 0.1, 0, 0, this.lerpK);
+    // ---- KNEES: smooth sinusoidal bend (NO rectify snap).
+    //    Knee bends most when that leg swings BACK (cos), never goes negative.
+    //    Using (1-cos)/2 maps [-1..1] → [0..1] smoothly, with a small resting
+    //    bend so legs never lock straight (looks rigid). ----
+    const kneeBend = 0.15;   // resting bend
+    const kneeAmp = 0.75 * (0.6 + sp * 0.4);
+    this._lerpRot(b.l_lowerleg, kneeBend + Math.max(0, c) * kneeAmp, 0, 0, this.lerpK);
+    this._lerpRot(b.r_lowerleg, kneeBend + Math.max(0, -c) * kneeAmp, 0, 0, this.lerpK);
     // ---- ARMS: counter-swing to legs, elbows bend naturally ----
+    //    Lower-arm lag: bend eases in/out smoothly (no snap at zero-cross).
     this._lerpRot(b.l_upperarm, -s * (0.9 + sp * 0.3), 0, 0.14, this.lerpK);
     this._lerpRot(b.r_upperarm, s * (0.9 + sp * 0.3), 0, -0.14, this.lerpK);
-    this._lerpRot(b.l_lowerarm, -0.6 + Math.max(0, -s) * 0.4, 0, 0, this.lerpK);
-    this._lerpRot(b.r_lowerarm, -0.6 + Math.max(0, s) * 0.4, 0, 0, this.lerpK);
-    // head looks slightly ahead in the travel direction
-    this._lerpRot(b.head, -sp * 0.12, 0, 0, 0.2);
+    // elbow bends when arm swings forward (−s for L, +s for R) — smoothed
+    this._lerpRot(b.l_lowerarm, -0.5 + Math.max(0, -s) * 0.5, 0, 0, this.lerpK);
+    this._lerpRot(b.r_lowerarm, -0.5 + Math.max(0, s) * 0.5, 0, 0, this.lerpK);
+    // ---- HEAD follow-through: bobs slightly OPPOSITE to the body bob
+    //    (lag), giving secondary motion that reads as weight/inertia. ----
+    const headBob = Math.sin(t * cyc + 0.6) * 0.08 * sp;  // phase-lagged
+    this._lerpRot(b.head, -sp * 0.12 + headBob, c * 0.05 * sp, 0, 0.2);
     b.hips.scale.lerp(_v1.set(1, 1, 1), 0.2);
   }
 

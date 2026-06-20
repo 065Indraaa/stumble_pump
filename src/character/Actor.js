@@ -199,7 +199,9 @@ export class Actor {
         while (delta < -Math.PI) delta += Math.PI * 2;
         this.facing += delta * (1 - Math.exp(-12 * dt));
       } else {
-        const decay = Math.max(0, 1 - FRICTION * dt);
+        // friction (stopping) — exponential so it eases out smoothly and
+        // matches at any framerate (was linear 1-FRICTION*dt, slightly jerky).
+        const decay = Math.exp(-FRICTION * dt);
         this.vel.x *= decay; this.vel.z *= decay;
       }
     }
