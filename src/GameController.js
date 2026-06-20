@@ -1297,5 +1297,4 @@ export function wireAll() {
     authResult(authTab === 'register' ? Auth.register(u, p, sol) : Auth.login(u, p));
   };
   document.getElementById('auth-pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('auth-submit').click(); });
-  document.getElementById('auth-guest').onclick = () => { SFX.click(); authResult(Auth.guest()); };
 }

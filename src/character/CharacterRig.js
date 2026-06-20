@@ -363,8 +363,20 @@ export class CharacterRig {
     band.rotation.z = Math.PI / 2; band.position.set(0.06, -0.15, 0.40); this.bones.head.add(band);
     const ember = new THREE.Mesh(new THREE.SphereGeometry(0.045, 12, 12), basicMat(0xFF5151));
     ember.position.set(0.26, -0.15, 0.40); this.bones.head.add(ember);
+
+    // Gold Sunglasses
+    const frameGeo = new THREE.BoxGeometry(0.35, 0.12, 0.04);
+    const frameMat = metalMat(0xFFD23F, 0.9, 0.1);
+    const lensGeo = new THREE.BoxGeometry(0.14, 0.08, 0.05);
+    const lensMat = basicMat(0x111111);
+    const shadesGroup = new THREE.Group();
+    shadesGroup.position.set(0, 0.05, 0.42);
+    this._part(frameGeo, frameMat, shadesGroup, 0, 0, 0);
+    this._part(lensGeo, lensMat, shadesGroup, -0.09, 0, 0);
+    this._part(lensGeo, lensMat, shadesGroup, 0.09, 0, 0);
+    this.bones.head.add(shadesGroup);
     
-    this.skinExtras.push(suit, collar, tie, cigar, band, ember);
+    this.skinExtras.push(suit, collar, tie, cigar, band, ember, shadesGroup);
   }
 
   _cupseyExtras(s) {
@@ -409,11 +421,29 @@ export class CharacterRig {
   _diamondExtras(s) {
     this.bones.headMesh.material = metalMat(0xB3E5FC, 0.95, 0.05);
     this.bones.headMesh.material.needsUpdate = true;
+    this.bones.torsoMesh.material = metalMat(0xB3E5FC, 0.95, 0.05);
+    this.bones.torsoMesh.material.needsUpdate = true;
+    
     const gemCrown = new THREE.Mesh(new THREE.OctahedronGeometry(0.28, 0), metalMat(0x4F8CFF, 0.9, 0.08));
     gemCrown.position.set(0, 0.45, 0); gemCrown.rotation.y = Math.PI / 4; this.bones.head.add(gemCrown);
     for (const arr of [this.bones.irisL, this.bones.irisR]) {
       arr.forEach((m) => { m.material = basicMat(0xA3E635); m.scale.multiplyScalar(1.2); });
     }
+
+    // Convert hands to shiny blue diamonds
+    const handMat = metalMat(0x4F8CFF, 1.0, 0.02);
+    for (const side of ['l_hand', 'r_hand']) {
+      const handGroup = this.bones[side];
+      // clear default hand
+      while(handGroup.children.length > 0){ 
+          handGroup.remove(handGroup.children[0]); 
+      }
+      // Add diamond
+      const diamondHand = new THREE.Mesh(new THREE.OctahedronGeometry(0.16, 0), handMat);
+      handGroup.add(diamondHand);
+      this.skinExtras.push(diamondHand);
+    }
+    
     this.skinExtras.push(gemCrown);
   }
 
