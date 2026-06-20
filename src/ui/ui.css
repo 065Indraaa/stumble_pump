@@ -528,6 +528,20 @@ h1,h2,h3,.fred{font-family:'Fredoka One',cursive;}
 .he-meta{font-size:12px;color:var(--paper-dim);margin-top:2px;}
 .he-date{font-size:11px;color:var(--paper-faint);flex-shrink:0;}
 
+/* ===== ROOM HISTORY (finished rooms) ===== */
+#room-history-wrap{margin-top:8px;}
+#room-history-list{display:flex;flex-direction:column;gap:8px;max-height:240px;overflow-y:auto;}
+.rh-row{background:rgba(255,255,255,0.04);border:1px solid var(--line-soft);border-radius:12px;padding:10px 14px;display:flex;align-items:center;gap:12px;}
+.rh-info{flex:1;min-width:0;}
+.rh-name{font-family:'Fredoka One',cursive;font-size:14px;color:var(--mint);line-height:1.2;}
+.rh-meta{font-size:11px;color:var(--paper-dim);margin-top:2px;}
+.rh-meta b{color:var(--yellow);}
+.rh-date{font-size:10px;color:var(--paper-faint);flex-shrink:0;text-align:right;}
+/* LIVE badge on a running room card */
+.rc-running{display:inline-block;background:var(--red);color:#fff;font-size:9px;padding:2px 7px;border-radius:50px;letter-spacing:1px;vertical-align:middle;margin-left:6px;animation:pulse 1.1s ease-in-out infinite;}
+/* host start-now hint in room-waiting */
+.rw-start-hint{font-size:12px;color:var(--paper-dim);text-align:center;max-width:380px;line-height:1.4;}
+
 /* ===== SETTINGS MODAL ===== */
 .modal{position:fixed;inset:0;z-index:50;background:rgba(5,7,13,0.7);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:20px;animation:fadeIn .2s ease;}
 @keyframes fadeIn{0%{opacity:0;}100%{opacity:1;}}

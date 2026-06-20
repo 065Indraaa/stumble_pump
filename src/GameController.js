@@ -265,10 +265,24 @@ export function enterCustomize() {
 export function enterLobby() {
   disposeActors(); disposeMap();
   G.map = buildLobby();
-  G.player = new Actor(shared.selectedSkin, true, 'player');
-  G.player.pos.set(0, 2, 0);
-  G.player.checkpoint.copy(G.player.pos);
-  G.actors = [G.player];
+  // Preserve room-match flags (set by startRoomMatch / btn-play) across the
+  // G.data reset below — previously these were wiped, which broke room matches.
+  const isRoomMatch = G.data.isRoomMatch || false;
+  const isHostSpectator = G.data.isHostSpectator || false;
+  const roomRounds = G.data.roomRounds || 3;
+  const fieldSize = G.data.fieldSize || 32;
+  // Host spectators don't spawn a controllable player — they watch the match.
+  if (isHostSpectator) {
+    G.player = null;
+    G.actors = [];
+    G._specTarget = 0;   // index of actor the spectator cam follows
+    G._specTimer = 0;
+  } else {
+    G.player = new Actor(shared.selectedSkin, true, 'player');
+    G.player.pos.set(0, 2, 0);
+    G.player.checkpoint.copy(G.player.pos);
+    G.actors = [G.player];
+  }
   // 60s waiting timer: real players join via matchmaking; bots trickle in
   // only after a grace window so the lobby doesn't feel instantly flooded.
   G.data = {
@@ -280,14 +294,20 @@ export function enterLobby() {
     waitStarted: true,
     forceStart: false,
     matchmade: false,
+    isRoomMatch,
+    isHostSpectator,
+    roomRounds,
+    fieldSize,
   };
   showScreen('lobby-ui');
-  document.getElementById('lobby-count').textContent = '1';
+  document.getElementById('lobby-count').textContent = isHostSpectator ? '0' : '1';
   Net.connect();
   Net.setLocal({ name: shared.user?.name || 'Player', skin: shared.selectedSkin });
   // matchmaking: this fills an EXISTING public room first (Net.joinMatchmaking
   // picks a room with free slots; only creates a new one if none exist)
-  if (!G.data.isRoomMatch) Net.joinMatchmaking();
+  // Room matches (incl. host-spectator) NEVER use quick-play matchmaking —
+  // they already have a dedicated room.
+  if (!isRoomMatch && !isHostSpectator) Net.joinMatchmaking();
   Net.setArena(true);   // broadcast our position so real peers see us
   setMode('lobby');
 }
@@ -301,10 +321,13 @@ function spawnLobbyBot() {
 
 function updateLobby(dt, t) {
   const d = G.data;
-  // ---- broadcast our lobby position for real-time peer sync ----
+  const spectator = !!d.isHostSpectator;
+  // ---- broadcast our position for real-time peer sync (players only) ----
   if (Net.connected) {
-    Net.setLocal({ pos: { x: G.player.pos.x, y: G.player.pos.y, z: G.player.pos.z }, anim: G.player.anim.state, facing: G.player.facing });
-    Net.publishState();
+    if (!spectator && G.player) {
+      Net.setLocal({ pos: { x: G.player.pos.x, y: G.player.pos.y, z: G.player.pos.z }, anim: G.player.anim.state, facing: G.player.facing });
+      Net.publishState();
+    }
     Net.publish();
     Net.prune();
     syncRemoteActors(dt, t, G.map, 'lobbyBot');
@@ -312,8 +335,8 @@ function updateLobby(dt, t) {
   const realPeerCount = Net.roomPeersList ? Net.roomPeersList().length : 0;
   const totalActors = G.actors.length;
 
-  // ---- 60s waiting clock ----
-  if (d.waitStarted && d.countdown < 0) {
+  // ---- 60s waiting clock (players only — spectators don't drive the timer) ----
+  if (!spectator && d.waitStarted && d.countdown < 0) {
     d.waitTimer -= dt;
     if (d.waitTimer <= 0) {
       // time's up — start the match with whoever is here
@@ -322,11 +345,10 @@ function updateLobby(dt, t) {
     }
   }
 
-  // ---- bot trickle: ONLY in public quick-play (never in private rooms).
-  //      In a room match, the lobby is real-players-only — bots are disabled
-  //      so friends actually play against each other. ----
+  // ---- bot trickle: ONLY in public quick-play (never in private rooms,
+  //      and never for host spectators — they watch real players only). ----
   d.spawnTimer -= dt;
-  if (!G.data.isRoomMatch) {
+  if (!d.isRoomMatch && !spectator) {
     const gracePassed = (60 - d.waitTimer) > 6;
     const maxBots = Net.connected ? Math.max(0, 6 - realPeerCount) : 28; // offline: fill up
     const botCount = G.actors.filter((a) => !a.isPlayer && !a._remote).length;
@@ -340,10 +362,18 @@ function updateLobby(dt, t) {
   G.map.update(dt, t);
 
   // ---- HUD ----
-  document.getElementById('lobby-count').textContent = Math.min(1 + realPeerCount + (totalActors - 1 - (G.actors.filter((a) => !a.isPlayer && !a._remote).length)), 32);
+  if (spectator) {
+    document.getElementById('lobby-count').textContent = realPeerCount;
+  } else {
+    document.getElementById('lobby-count').textContent = Math.min(1 + realPeerCount + (totalActors - 1 - (G.actors.filter((a) => !a.isPlayer && !a._remote).length)), 32);
+  }
   const statusEl = document.getElementById('net-status');
   const fs = document.getElementById('force-start');
-  if (G.data.isRoomMatch) {
+  if (spectator) {
+    // Host spectator: watching, can't force-start from lobby (already started)
+    statusEl.textContent = realPeerCount > 0 ? `SPECTATING · ${realPeerCount} players` : 'Waiting for players to join…';
+    fs.classList.add('hidden');
+  } else if (d.isRoomMatch) {
     // private room: show waiting-for-friends state, host can start anytime
     if (realPeerCount > 0) statusEl.textContent = `${realPeerCount + 1} players in room · waiting to start`;
     else statusEl.textContent = `Waiting for friends… ${Math.ceil(d.waitTimer)}s`;
@@ -362,8 +392,8 @@ function updateLobby(dt, t) {
     fs.textContent = 'START WITH BOTS';
   }
 
-  // ---- start trigger: room full, force-start, OR 60s elapsed ----
-  if (totalActors >= 32 || d.forceStart) {
+  // ---- start trigger: room full, force-start, OR 60s elapsed (players only) ----
+  if (!spectator && (totalActors >= 32 || d.forceStart)) {
     if (d.countdown < 0) { d.countdown = 5; d.cdTimer = 0; }
     d.cdTimer += dt;
     const cdEl = document.getElementById('countdown-overlay');
@@ -399,6 +429,7 @@ function syncRemoteActors(dt, t, map, fallbackBrain) {
       a = new Actor(s.skin || randomBotSkinLocal(), false, fallbackBrain || 'lobbyBot');
       a._remote = true;
       a._peerId = s.id;
+      a._peerName = s.name || 'Player';   // retained for spectator result text
       a.addNameplate(s.name || 'Player');
       G.actors.push(a);
     }
@@ -420,11 +451,17 @@ function syncRemoteActors(dt, t, map, fallbackBrain) {
 // ROULETTE
 // ============================================================
 function enterRoulette() {
+  // Preserve room-match flags across the G.data rewrite below.
+  const isRoomMatch = G.data.isRoomMatch || false;
+  const isHostSpectator = G.data.isHostSpectator || false;
+  const roomRounds = G.data.roomRounds || 3;
+  const fieldSize = G.data.fieldSize || 32;
   disposeActors(); disposeMap();
   showScreen('roulette-ui');
   document.getElementById('round-announce').classList.add('hidden');
   const reel = document.getElementById('reel'); reel.innerHTML = '';
   const pick = Math.floor(Math.random() * MAPS.length);
+  G.data = { isRoomMatch, isHostSpectator, roomRounds, fieldSize };
   G.data.pickedMap = MAPS[pick];
   const seq = [];
   for (let i = 0; i < 24; i++) seq.push(MAPS[Math.floor(Math.random() * MAPS.length)]);
@@ -468,12 +505,21 @@ function enterMatch(mapDef) {
   G.map.def = mapDef;
   if (G.map.timerRef !== undefined) G.map.timerRef = G.map.surviveTime;
   const sp = G.map.spawnPoints;
-  G.player = new Actor(shared.selectedSkin, true, 'player');
-  G.player.pos.copy(sp[0]); G.player.checkpoint.copy(sp[0]);
-  G.actors = [G.player];
+  const spectator = !!G.data.isHostSpectator;
+  // Host spectators don't spawn a controllable player — they observe the match.
+  if (spectator) {
+    G.player = null;
+    G.actors = [];
+    G._specTarget = 0;
+    G._specTimer = 0;
+  } else {
+    G.player = new Actor(shared.selectedSkin, true, 'player');
+    G.player.pos.copy(sp[0]); G.player.checkpoint.copy(sp[0]);
+    G.actors = [G.player];
+  }
   Input.camYaw = 0; Input.camPitch = 0.28;
   const botBrain = G.map.type === 'race' ? 'raceBot' : 'survivalBot';
-  const fieldSize = Math.max(8, G.data.fieldSize || 32);
+  const fieldSize = Math.max(2, G.data.fieldSize || 32);
   // Real MQTT peers: spawn as _remote avatars (driven by syncRemoteActors
   // every frame, so real cross-device players move live in the arena).
   const realPeers = Net.roomPeersList ? Net.roomPeersList() : [];
@@ -487,6 +533,7 @@ function enterMatch(mapDef) {
     a._isRealPeer = true;
     a._remote = true;
     a._peerId = peer.id;
+    a._peerName = peer.name || 'Player';   // retained for spectator result text
     G.actors.push(a); spawnIdx++;
   }
   // Fill remaining slots with bots — BUT NOT in private room matches,
@@ -511,12 +558,17 @@ function enterMatch(mapDef) {
   document.getElementById('round-num').textContent = shared.round;
   document.getElementById('survive-timer').classList.toggle('hidden', !G.data.survive);
   document.getElementById('qualify-counter').classList.toggle('hidden', G.data.survive);
-  if (MOBILE) document.getElementById('mobile-controls').classList.remove('hidden');
+  // Spectators don't need mobile controls; players do.
+  if (MOBILE && !spectator) document.getElementById('mobile-controls').classList.remove('hidden');
+  else document.getElementById('mobile-controls').classList.add('hidden');
   showScreen('match-hud');
   const objBadge = document.getElementById('objective-badge'), objText = document.getElementById('objective-text');
   const rprog = document.getElementById('race-progress');
   objBadge.classList.remove('hidden');
-  if (G.data.survive) { objText.textContent = `Survive ${G.map.surviveTime || 45}s — don't fall`; rprog.classList.add('hidden'); }
+  if (spectator) {
+    objText.textContent = 'SPECTATING — watching the match';
+    rprog.classList.add('hidden');
+  } else if (G.data.survive) { objText.textContent = `Survive ${G.map.surviveTime || 45}s — don't fall`; rprog.classList.add('hidden'); }
   else { objText.textContent = `Reach the finish — top ${G.data.qualifyTarget} qualify`; rprog.classList.remove('hidden'); document.getElementById('rp-fill').style.width = '0%'; }
   showArenaIntro(mapDef);
   G.data.phase = 'countdown'; G.data.cd = 3.9; G.data.cdShown = 4;
@@ -536,6 +588,9 @@ function showArenaIntro(mapDef) {
 
 function updateMatch(dt, t) {
   const d = G.data, ctx = G.map;
+  const spectator = !!d.isHostSpectator;
+  // Spectator keeps syncing real peer avatars so the host watches them move live.
+  if (spectator && Net.connected) syncRemoteActors(dt, t, ctx, ctx.type === 'race' ? 'raceBot' : 'survivalBot');
   if (d.phase === 'end') {
     G.actors.forEach((a) => { if (!a.dead) a.update(dt, t, ctx); });
     ctx.update(dt, t);
@@ -574,15 +629,23 @@ function updateMatch(dt, t) {
   if (!d.survive) {
     const q = G.actors.filter((a) => a.qualified).length;
     if (q !== d.qualified) { d.qualified = q; document.getElementById('q-cur').textContent = q; bumpCounter(); }
-    if (G.player.qualified || G.player.dead || G.player.eliminated) { endMatch(); return; }
-    if (G.actors.length - countEliminated() <= d.qualifyTarget) { endMatch(); return; }
-    if (ctx.finishZ) {
-      const prog = Math.max(0, Math.min(1, G.player.pos.z / ctx.finishZ));
-      document.getElementById('rp-fill').style.width = (prog * 100) + '%';
+    // Player-based end conditions only apply when there's a local player.
+    if (!spectator) {
+      if (G.player.qualified || G.player.dead || G.player.eliminated) { endMatch(); return; }
+      if (ctx.finishZ) {
+        const prog = Math.max(0, Math.min(1, G.player.pos.z / ctx.finishZ));
+        document.getElementById('rp-fill').style.width = (prog * 100) + '%';
+      }
     }
+    // Arena-level end: when enough have qualified or too few remain unqualified.
+    if (G.actors.length - countEliminated() <= d.qualifyTarget) { endMatch(); return; }
   } else {
     const alive = G.actors.filter((a) => !a.dead && !a.eliminated).length;
-    if (G.player.dead || G.player.eliminated || alive <= d.qualifyTarget) { endMatch(); return; }
+    if (spectator) {
+      if (alive <= d.qualifyTarget) { endMatch(); return; }
+    } else {
+      if (G.player.dead || G.player.eliminated || alive <= d.qualifyTarget) { endMatch(); return; }
+    }
   }
   ctx.update(dt, t);
 }
@@ -592,10 +655,34 @@ function bumpCounter() { const el = document.getElementById('qualify-counter'); 
 
 function endMatch() {
   G.data.phase = 'end';
-  const p = G.player;
-  const playerQualified = p.qualified && !p.dead;
-  if (playerQualified) spawnConfettiBurst(p.pos, 60);
-  setTimeout(() => showResult(playerQualified), 1400);
+  const spectator = !!G.data.isHostSpectator;
+  if (!spectator) {
+    const p = G.player;
+    const playerQualified = p.qualified && !p.dead;
+    if (playerQualified) spawnConfettiBurst(p.pos, 60);
+    setTimeout(() => showResult(playerQualified), 1400);
+  } else {
+    // Host spectator: find the highest-finishing actor and treat them as winner.
+    const winner = G.actors.slice().sort((a, b) => {
+      if (a.qualified && !b.qualified) return -1;
+      if (!a.qualified && b.qualified) return 1;
+      return (a.finishPos || 99) - (b.finishPos || 99);
+    })[0];
+    if (winner) {
+      spawnConfettiBurst(winner.pos, 60);
+      G.data._specWinner = winner;
+    }
+    // mark the room finished + broadcast to other devices + record local history
+    if (currentRoom) {
+      const results = {
+        winnerName: (winner && winner.nameplate) ? '' : (winner ? 'Player' : '—'),
+        players: G.actors.length, map: G.map?.def?.name || 'Unknown', date: new Date().toISOString(),
+      };
+      Rooms.finish(currentRoom.id, results);
+      Net.announceRoomEnd(results);
+    }
+    setTimeout(() => showSpectatorResult(winner), 1400);
+  }
 }
 
 // ============================================================
@@ -633,6 +720,36 @@ function showResult(qualified) {
     Auth.save(u); updateTopBar();
   }
   G.data.lastQualified = qualified;
+  setMode('result');
+}
+
+/**
+ * Spectator result: the host watches the match end and sees who won.
+ * The host is NOT credited coins/wins — they only observed. After viewing,
+ * they return to the menu (no further rounds).
+ */
+function showSpectatorResult(winner) {
+  showScreen('result-ui');
+  const ui = document.getElementById('result-ui');
+  ui.className = 'screen qualified';
+  const winnerName = winner ? (winner._peerName || (winner.nameplateText) || 'A player') : 'Nobody';
+  document.getElementById('result-text').textContent = 'MATCH OVER';
+  document.getElementById('result-stats').innerHTML =
+    `<div class="rs-big">🏆 ${winnerName}</div>won Round ${shared.round} · ${G.actors.length} players watched`;
+  const contBtn = document.getElementById('result-continue');
+  const quitBtn = document.getElementById('result-quit');
+  contBtn.textContent = 'BACK TO MENU';
+  quitBtn.classList.add('hidden');
+  // also record to global match history
+  History.add({
+    date: new Date().toISOString(),
+    winnerName, winnerSol: '',
+    players: G.actors.length,
+    rounds: G.data.roomRounds || 3,
+    map: G.map && G.map.def ? G.map.def.name : 'Unknown',
+    isRoom: true,
+  });
+  SFX.qualify();
   setMode('result');
 }
 
@@ -764,21 +881,52 @@ function renderRoomList() {
   try { remoteList = Net.visibleRooms(); } catch (e) {}
   // de-dup by id (a local room may also be visible remotely)
   const seen = new Set();
-  const merged = [...localList, ...remoteList].filter((r) => {
+  const merged = [...remoteList, ...localList].filter((r) => {
     if (seen.has(r.id)) return false; seen.add(r.id); return true;
   });
   const el = document.getElementById('room-list'); el.innerHTML = '';
   if (merged.length === 0) {
     el.innerHTML = '<div class="room-empty">No active rooms yet.<br>Create one to invite friends — rooms are live across devices!</div>';
-    return;
+  } else {
+    merged.forEach((r) => {
+      const row = document.createElement('div'); row.className = 'room-card';
+      const cd = roomCountdownStr(r.start);
+      const n = r.players ? r.players.length : 1;
+      const running = r.status === 'running';
+      const hostName = r.hostName || (r.players && r.players[0]?.name) || 'Host';
+      const joinLabel = running ? 'WATCH' : 'JOIN';
+      row.innerHTML = `<div class="rc-info"><div class="rc-name">${r.name}${running ? ' <span class="rc-running">LIVE</span>' : ''}</div><div class="rc-meta"><span>👤 ${n}/${r.max || 32}</span><span>🏁 ${r.rounds || 3}R</span><span>👑 ${hostName}</span>${cd ? `<span class="rc-start">${cd}</span>` : ''}</div></div><button class="nav-btn primary small rc-join">${joinLabel}</button>`;
+      row.querySelector('button').onclick = (ev) => { ev.stopPropagation(); SFX.click(); joinAnyRoom(r); };
+      el.appendChild(row);
+    });
   }
-  merged.forEach((r) => {
-    const row = document.createElement('div'); row.className = 'room-card';
-    const cd = roomCountdownStr(r.start);
-    const n = r.players ? r.players.length : 1;
-    row.innerHTML = `<div class="rc-info"><div class="rc-name">${r.name}</div><div class="rc-meta"><span>${n}/${r.max || 32} players</span><span>${r.rounds || 3} rounds</span>${cd ? `<span class="rc-start">${cd}</span>` : ''}</div></div><button class="nav-btn primary small rc-join">JOIN</button>`;
-    row.querySelector('button').onclick = (ev) => { ev.stopPropagation(); SFX.click(); joinAnyRoom(r); };
-    el.appendChild(row);
+  // ---- Room history (finished rooms across devices) ----
+  renderRoomHistory();
+}
+
+function renderRoomHistory() {
+  let remote = [];
+  try { remote = Net.endedRoomsList(); } catch (e) {}
+  const localFinished = Rooms.listFinished();
+  const seen = new Set();
+  const merged = [...remote, ...localFinished].filter((r) => {
+    if (seen.has(r.id)) return false; seen.add(r.id); return true;
+  });
+  const wrap = document.getElementById('room-history-wrap'); if (!wrap) return;
+  const list = document.getElementById('room-history-list');
+  const empty = merged.length === 0;
+  wrap.classList.toggle('hidden', empty);
+  if (empty) { if (list) list.innerHTML = ''; return; }
+  if (!list) return;
+  list.innerHTML = '';
+  merged.slice(0, 12).forEach((r) => {
+    const row = document.createElement('div'); row.className = 'rh-row';
+    const when = r.date ? new Date(r.date).toLocaleString() : 'recently';
+    const winner = r.winnerName || (r.results && r.results.winnerName) || '—';
+    const players = r.players || (r.results && r.results.players) || '?';
+    const map = r.map || (r.results && r.results.map) || 'Unknown';
+    row.innerHTML = `<div class="rh-info"><div class="rh-name">🏆 ${r.name || 'Degen Room'}</div><div class="rh-meta">Winner: <b>${winner}</b> · ${map} · ${players} players</div></div><div class="rh-date">${when}</div>`;
+    list.appendChild(row);
   });
 }
 
@@ -833,9 +981,11 @@ function updateRoomInfo() {
   const count = 1 + (Net.roomPeersList?.().length || 0);
   document.getElementById('rw-meta').textContent = `${count}/${currentRoom.max} players · ${currentRoom.rounds} rounds`;
   document.getElementById('rw-start-time').textContent = roomCountdownStr(currentRoom.start);
-  // host = first local player, OR the room host flag from MQTT
-  const isHost = currentRoom.players[0]?.name === (shared.user?.name || 'Player');
+  // Host = the device that created the room (Net.isHost). This is the only
+  // device allowed to manually start or spectate-control the match.
+  const isHost = !!Net.isHost;
   document.getElementById('rw-force-start').classList.toggle('hidden', !isHost);
+  document.getElementById('rw-start-hint').classList.toggle('hidden', !isHost);
   if (currentRoom.start) {
     const target = new Date(currentRoom.start).getTime();
     const diff = target - Date.now();
@@ -845,6 +995,26 @@ function updateRoomInfo() {
       const mins = Math.floor(diff / 60000), secs = Math.floor((diff % 60000) / 1000);
       cdEl.textContent = `Auto-start in ${mins}m ${secs.toString().padStart(2, '0')}s`;
     } else cdEl.classList.add('hidden');
+  }
+}
+
+/**
+ * Auto-start the room match when the scheduled UTC start time arrives.
+ * Runs every frame while on the room-waiting screen (via the 'room-waiting'
+ * mode hook). Only the host triggers the launch (it then broadcasts to guests
+ * via announceRoomStart). Guests are launched by the sp_room_start listener.
+ */
+function checkRoomAutoStart() {
+  if (!currentRoom || !currentRoom.start) return;
+  if (G.data._roomStarted) return;              // already launching
+  const target = new Date(currentRoom.start).getTime();
+  if (isNaN(target)) return;
+  if (Date.now() >= target) {
+    if (Net.isHost) {
+      G.data._roomStarted = true;
+      startRoomMatch();                          // host launches + broadcasts
+    }
+    // guests will be launched when they receive sp_room_start
   }
 }
 
@@ -875,9 +1045,15 @@ function startRoomMatch() {
   stopRoomPolling();
   G.data.roomRounds = currentRoom.rounds;
   G.data.isRoomMatch = true;
-  // count real MQTT peers so the field is sized to live players
-  const peerCount = 1 + (Net.roomPeersList?.().length || 0);
-  G.data.fieldSize = Math.max(8, peerCount);
+  // Host becomes a SPECTATOR (not a player). The field is sized to the real
+  // MQTT peers only — the host watches them compete instead of joining in.
+  G.data.isHostSpectator = !!Net.isHost;
+  const realPeers = Net.roomPeersList?.().length || 0;
+  G.data.fieldSize = G.data.isHostSpectator ? Math.max(2, realPeers) : Math.max(2, realPeers + 1);
+  // mark the room as live so the directory shows it (no longer JOIN-able)
+  if (Net.roomMeta) Net.roomMeta.status = 'running';
+  if (currentRoom._local) { currentRoom.status = 'running'; Rooms.update(currentRoom); }
+  Net.beatRoom(true);
   // broadcast start to all peers in this room so guests launch too
   Net.announceRoomStart();
   shared.round = 1;
@@ -889,6 +1065,8 @@ function leaveRoom() {
   Net.leaveRoom();
   currentRoom = null;
   stopRoomPolling();
+  // clear room-match flags so the next PLAY session starts fresh as a player
+  if (G.data) { G.data.isRoomMatch = false; G.data.isHostSpectator = false; G.data._roomStarted = false; }
   enterMenu();
 }
 
@@ -919,6 +1097,30 @@ function updateCamera(dt) {
     return;
   }
   if (G.mode === 'lobby' || G.mode === 'match') {
+    // ---- Spectator camera: follow a rotating target actor ----
+    if (G.data.isHostSpectator) {
+      const live = G.actors.filter((a) => !a.dead && !a.eliminated);
+      if (live.length > 0) {
+        G._specTimer = (G._specTimer || 0) - dt;
+        if (G._specTimer <= 0) {              // switch target every ~6s
+          G._specTimer = 6;
+          G._specTarget = (G._specTarget + 1) % live.length;
+        }
+        const tgt = live[G._specTarget % live.length];
+        const tp = tgt.pos;
+        const a = G.modeT * 0.3;
+        _camTarget.set(tp.x + Math.sin(a) * 8, tp.y + 5, tp.z + Math.cos(a) * 8);
+        camera.position.lerp(_camTarget, 1 - Math.exp(-3 * dt));
+        camera.lookAt(tp.x, tp.y + 1, tp.z);
+      } else if (G.map) {
+        // nothing alive yet — slowly orbit the spawn
+        const a = G.modeT * 0.2;
+        camera.position.lerp(_camTarget.set(Math.sin(a) * 10, 6, Math.cos(a) * 10), 0.04);
+        camera.lookAt(0, 1, 0);
+      }
+      return;
+    }
+    if (!G.player) return;   // safety: no player, no follow
     const p = G.player.pos;
     // look-ahead: shift camera target slightly in player's movement direction
     const vx = G.player.vel.x, vz = G.player.vel.z;
@@ -940,11 +1142,15 @@ function updateCamera(dt) {
   }
   if (G.mode === 'roulette' || G.mode === 'winner') { camera.position.lerp(_v1.set(0, 4, 8), 0.05); camera.lookAt(0, 2, 0); return; }
   if (G.mode === 'result') {
-    const p = G.player.pos;
+    // Spectator result: orbit the winner if present, else arena origin.
+    const specWinner = G.data._specWinner;
+    const cx = specWinner ? specWinner.pos.x : 0;
+    const cy = specWinner ? specWinner.pos.y : 0;
+    const cz = specWinner ? specWinner.pos.z : 0;
     const a = G.modeT * 0.7;
-    _camTarget.set(p.x + Math.sin(a) * 5, p.y + 2.5, p.z + Math.cos(a) * 5);
+    _camTarget.set(cx + Math.sin(a) * 5, cy + 2.5, cz + Math.cos(a) * 5);
     camera.position.lerp(_camTarget, 0.05);
-    camera.lookAt(p.x, p.y + 1, p.z);
+    camera.lookAt(cx, cy + 1, cz);
     return;
   }
 }
@@ -1008,8 +1214,13 @@ function authResult(r) {
 // WIRE EVERYTHING
 // ============================================================
 export function wireAll() {
-  register('menu', { update: (dt, t) => { if (G.preview) { G.preview.anim.set('idle'); G.preview.anim.update(dt, t); _updateSky(G.preview.root.parent, t); } } });
+  register('menu', { update: (dt, t) => { if (G.preview) { G.preview.anim.set('idle'); G.preview.anim.update(dt, t); _updateSky(G.preview.root.parent, t); } Net.publish(); Net.prune(); } });
   register('customize', { update: (dt, t) => { if (G.preview) { G.preview.anim.set('idle'); G.preview.anim.update(dt, t); _updateSky(G.preview.root.parent, t); } } });
+  // Rooms + room-waiting screens MUST heartbeat the network, otherwise MQTT
+  // goes idle and rooms never get discovered/refreshed while the player sits
+  // on those screens.
+  register('rooms', { update: (dt) => { Net.publish(); Net.prune(); if (Net.isHost) Net.beatRoom(true); } });
+  register('room-waiting', { update: () => { Net.publish(); Net.prune(); if (Net.isHost) Net.beatRoom(true); checkRoomAutoStart(); } });
   register('lobby', { update: updateLobby });
   register('roulette', { update: updateRoulette });
   register('match', { update: updateMatch });
@@ -1018,7 +1229,7 @@ export function wireAll() {
 
   const click = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = () => { SFX.click(); fn(); }; };
 
-  click('btn-play', () => { shared.round = 1; G.data.fieldSize = 32; G.data.isRoomMatch = false; G.data.roomRounds = 3; enterLobby(); });
+  click('btn-play', () => { shared.round = 1; G.data.fieldSize = 32; G.data.isRoomMatch = false; G.data.isHostSpectator = false; G.data.roomRounds = 3; enterLobby(); });
   click('btn-customize', enterCustomize);
   click('btn-rooms', enterRooms);
   click('btn-history', showHistory);
@@ -1031,6 +1242,8 @@ export function wireAll() {
   document.querySelectorAll('.tab').forEach((tb) => tb.onclick = () => { SFX.click(); buildCustomGrid(tb.dataset.tab); });
 
   click('result-continue', () => {
+    // Spectators always go back to the menu (they don't advance rounds).
+    if (G.data.isHostSpectator) { leaveRoom(); return; }
     const maxRounds = G.data.roomRounds || 3;
     if (G.data.lastQualified) {
       if (shared.round >= maxRounds) { enterMenu(); }

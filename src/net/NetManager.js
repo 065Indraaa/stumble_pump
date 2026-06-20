@@ -8,16 +8,25 @@
 // ============================================================
 import { MQTT_URL, TOPIC_PRESENCE, TOPIC_ROOM_JOIN, TOPIC_ROOM_LEAVE, TOPIC_ROOM_START, MAX_ROOM, ROOM_TIMEOUT } from '../config/constants.js';
 
+// Dedicated "room directory" topic: hosts broadcast their room here so the
+// Rooms screen can list every active room across all devices reliably.
+// This is separate from TOPIC_ROOM_JOIN (which is presence/heartbeat) so a
+// room shows up even if the host is not actively heart-beating join packets.
+const TOPIC_ROOM_DIR = 'stumblepump/v4/rooms/directory';
+const TOPIC_ROOM_END = 'stumblepump/v4/rooms/ended';  // finished room tombstones
+
 const id = 'p' + Math.random().toString(36).slice(2, 9);
 let client = null, connected = false, failed = false;
-let lastPresence = 0, lastRoomBeat = 0, lastState = 0;
+let lastPresence = 0, lastRoomBeat = 0, lastState = 0, lastDirBeat = 0;
 
 // presence: everyone online (drives the menu "X ONLINE" counter)
 const peers = new Map();
 // room peers: players in the SAME room/lobby/match as us
 const roomPeers = new Map();
-// remote room directory (rooms created by OTHER devices)
+// remote room directory (rooms created by OTHER devices, advertised via TOPIC_ROOM_DIR)
 const remoteRooms = new Map();
+// finished-room tombstones (host announces when a match completes)
+const endedRooms = new Map();
 // live state per peer: { pos, anim, facing, last } — used to move 3D avatars
 const peerStates = new Map();
 
@@ -38,8 +47,12 @@ function connect() {
       client.subscribe(TOPIC_ROOM_JOIN);
       client.subscribe(TOPIC_ROOM_LEAVE);
       client.subscribe(TOPIC_ROOM_START);
+      client.subscribe(TOPIC_ROOM_DIR);
+      client.subscribe(TOPIC_ROOM_END);
       // announce we are online immediately
       try { client.publish(TOPIC_PRESENCE, JSON.stringify({ id, name: local.name })); } catch (e) {}
+      // if we already have a hosted room (reconnect), re-advertise it
+      if (myRoomId && myRoomMeta && myRoomMeta.host) publishRoomDir(true);
     });
     client.on('message', (t, msg) => {
       try {
@@ -73,6 +86,20 @@ function connect() {
           if (d.roomId === myRoomId) {
             window.dispatchEvent(new CustomEvent('sp_room_start', { detail: { roomId: d.roomId, host: d.host } }));
           }
+        } else if (t === TOPIC_ROOM_DIR) {
+          // a host is advertising/refreshing its room — register it in the directory
+          remoteRooms.set(d.roomId, {
+            id: d.roomId, name: d.roomMeta.name, max: d.roomMeta.max,
+            rounds: d.roomMeta.rounds, start: d.roomMeta.start || null,
+            status: d.roomMeta.status || 'waiting',
+            hostName: d.hostName, hostId: d.id, last: now,
+          });
+        } else if (t === TOPIC_ROOM_END) {
+          // a host announces a room finished with results — tombstone it
+          endedRooms.set(d.roomId, { ...d.results, id: d.roomId, last: now });
+          // stop showing it as joinable
+          const rr = remoteRooms.get(d.roomId);
+          if (rr) rr.status = 'finished';
         }
       } catch (e) {}
     });
@@ -82,18 +109,44 @@ function connect() {
 }
 
 // ---- Room directory: broadcast our room so others can discover it ----
+// publishRoomDir sends a dedicated directory packet so the Rooms screen lists
+// this room even before/after heartbeats. Called on host/join and refreshed.
+function publishRoomDir(force = false) {
+  if (!connected || !client || !myRoomId || !myRoomMeta) return;
+  const now = performance.now();
+  if (!force && now - lastDirBeat < 1500) return;
+  lastDirBeat = now;
+  const payload = {
+    id, roomId: myRoomId, hostName: local.name || 'Host',
+    roomMeta: {
+      name: myRoomMeta.name, max: myRoomMeta.max, rounds: myRoomMeta.rounds,
+      start: myRoomMeta.start || null, status: myRoomMeta.status || 'waiting',
+    },
+  };
+  try { client.publish(TOPIC_ROOM_DIR, JSON.stringify(payload)); } catch (e) {}
+}
 function hostRoom(room) {
   myRoomId = room.id;
   myRoomMeta = {
     name: room.name, max: room.max, rounds: room.rounds, start: room.start || null, host: true,
+    status: 'waiting',
   };
   beatRoom(true);
+  publishRoomDir(true);
 }
 function joinRoomRemote(roomId, playerName, skin) {
   myRoomId = roomId;
-  myRoomMeta = { name: 'Room', max: 32, rounds: 3, start: null, host: false };
+  myRoomMeta = { name: 'Room', max: 32, rounds: 3, start: null, host: false, status: 'waiting' };
   local.name = playerName; local.skin = skin;
   beatRoom(true);
+}
+// Host announces a room's match finished — records results as a tombstone
+// so other devices can show it in room history and stop offering JOIN.
+function announceRoomEnd(results) {
+  if (!myRoomId || !connected || !client) return;
+  const payload = { id, roomId: myRoomId, results };
+  try { client.publish(TOPIC_ROOM_END, JSON.stringify(payload)); } catch (e) {}
+  if (myRoomMeta) myRoomMeta.status = 'finished';
 }
 
 function beatRoom(force = false) {
@@ -109,6 +162,8 @@ function beatRoom(force = false) {
     pos: local.pos, anim: local.anim, facing: local.facing,
   };
   try { client.publish(TOPIC_ROOM_JOIN, JSON.stringify(payload)); } catch (e) {}
+  // refresh the room directory entry too (cheap, keeps status/player counts live)
+  if (myRoomMeta && myRoomMeta.host) publishRoomDir(true);
 }
 
 // ---- Matchmaking: auto-pick or create a public room for PLAY button ----
@@ -135,6 +190,9 @@ function leaveRoom() {
   }
   roomPeers.delete(id);
   peerStates.delete(id);
+  // If we were the host, drop our own room from the remote directory so it
+  // disappears from everyone's Rooms list. Guests leaving keeps the room up.
+  if (myRoomMeta && myRoomMeta.host) remoteRooms.delete(myRoomId);
   myRoomId = null;
   myRoomMeta = null;
 }
@@ -163,20 +221,53 @@ function roomPeersList() {
   }
   return list;
 }
-/** Rooms visible across devices = remote rooms + locally-created ones. */
+/** Rooms visible across devices = remote rooms + our own hosted room (if any).
+ *  Finished rooms are excluded — they surface via endedRoomsList(). */
 function visibleRooms() {
   const now = performance.now();
   const out = [];
+  const seen = new Set();
   for (const [rid, r] of remoteRooms) {
     if (now - r.last > ROOM_TIMEOUT) continue;
+    if (r.status === 'finished') continue;   // don't list ended rooms as joinable
+    seen.add(rid);
     // count live players in this room
     let n = 0;
     for (const [, rp] of roomPeers) if (rp.roomId === rid && now - rp.last < ROOM_TIMEOUT) n++;
     out.push({
       id: rid, name: r.name, max: r.max, rounds: r.rounds, start: r.start,
+      status: r.status || 'waiting',
+      hostName: r.hostName || 'Host',
       players: new Array(Math.max(1, n)).fill(0).map(() => ({ name: '?' })),
     });
   }
+  // Always include our OWN hosted room even if no remote peer has echoed it
+  // back yet (otherwise the creator wouldn't see it on a second device that
+  // hasn't received a TOPIC_ROOM_DIR packet).
+  if (myRoomId && myRoomMeta && myRoomMeta.host && !seen.has(myRoomId) && myRoomMeta.status !== 'finished') {
+    let n = 1;
+    for (const [, rp] of roomPeers) if (rp.roomId === myRoomId && now - rp.last < ROOM_TIMEOUT) n++;
+    out.push({
+      id: myRoomId, name: myRoomMeta.name, max: myRoomMeta.max, rounds: myRoomMeta.rounds,
+      start: myRoomMeta.start, status: myRoomMeta.status || 'waiting',
+      hostName: local.name || 'Host',
+      _local: true,
+      players: new Array(n).fill(0).map(() => ({ name: '?' })),
+    });
+  }
+  return out;
+}
+
+/** Finished-room tombstones (history across devices). */
+function endedRoomsList() {
+  const now = performance.now();
+  const out = [];
+  for (const [, r] of endedRooms) {
+    if (now - r.last > 600000) continue; // keep for ~10 min
+    out.push(r);
+  }
+  // most recent first
+  out.sort((a, b) => (b.last || 0) - (a.last || 0));
   return out;
 }
 
@@ -230,6 +321,7 @@ function prune() {
   for (const [k, v] of roomPeers) { if (now - v.last > ROOM_TIMEOUT) { roomPeers.delete(k); peerStates.delete(k); } }
   for (const [k, v] of remoteRooms) { if (now - v.last > ROOM_TIMEOUT) remoteRooms.delete(k); }
   for (const [k, v] of peerStates) { if (now - v.last > 3000) peerStates.delete(k); }
+  for (const [k, v] of endedRooms) { if (now - v.last > 600000) endedRooms.delete(k); }
 }
 
 function setLocal(o) { Object.assign(local, o); }
@@ -237,12 +329,13 @@ function realCount() { return 1 + peers.size; }
 
 export const Net = {
   id, connect, publish, prune, peers, setLocal, realCount,
-  joinMatchmaking, leaveRoom, announceRoomStart,
-  roomPlayerCount, roomPeersList, visibleRooms,
-  hostRoom, joinRoomRemote, beatRoom,
+  joinMatchmaking, leaveRoom, announceRoomStart, announceRoomEnd,
+  roomPlayerCount, roomPeersList, visibleRooms, endedRoomsList,
+  hostRoom, joinRoomRemote, beatRoom, publishRoomDir,
   publishState, setArena, peerStateList,
   get roomId() { return myRoomId; },
   get roomMeta() { return myRoomMeta; },
   get connected() { return connected; },
   get failed() { return failed; },
+  get isHost() { return !!(myRoomMeta && myRoomMeta.host); },
 };

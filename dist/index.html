@@ -16,10 +16,10 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet" />
 <script src="/mqtt.min.js"></script>
-  <script type="module" crossorigin src="/assets/index-BPLpEQnh.js"></script>
+  <script type="module" crossorigin src="/assets/index-C_NMbw3G.js"></script>
   <link rel="modulepreload" crossorigin href="/assets/rapier-D3Mqfikn.js">
   <link rel="modulepreload" crossorigin href="/assets/three-CgzAifOg.js">
-  <link rel="stylesheet" crossorigin href="/assets/index-BLZchQMj.css">
+  <link rel="stylesheet" crossorigin href="/assets/index-DBKhF7tE.css">
 </head>
 <body>
 <canvas id="game-canvas"></canvas>
@@ -177,6 +177,10 @@
     <div id="room-list-panel" class="glass-panel">
       <div class="panel-title">ACTIVE ROOMS</div>
       <div id="room-list"></div>
+      <div id="room-history-wrap" class="hidden">
+        <div class="panel-title" style="margin-top:16px;">RECENT MATCHES</div>
+        <div id="room-history-list"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -198,7 +202,8 @@
     <div class="panel-title">PLAYERS <span id="rw-count">1</span>/<span id="rw-max">32</span></div>
     <div id="rw-player-list"></div>
   </div>
-  <button id="rw-force-start" class="nav-btn primary hidden">START NOW</button>
+  <button id="rw-force-start" class="nav-btn primary hidden">START MATCH NOW</button>
+  <div class="rw-start-hint hidden" id="rw-start-hint">Start now, or wait for the scheduled UTC auto-start.</div>
 </div>
 
 <!-- WINNER -->
