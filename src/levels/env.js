@@ -528,7 +528,7 @@ export function makeGroundDisc(radius = 60, topColor = SP_PALETTE.terrain, skirt
     new THREE.CylinderGeometry(radius, radius * 0.96, 1.4, 48),
     lambertMat(topColor)
   );
-  top.position.y = -0.7;
+  top.position.y = -0.72; // shifted slightly below 0 to avoid Z-fighting with tiles
   top.receiveShadow = true; top.castShadow = false;
   g.add(top);
   // rocky tapered skirt under it (gives depth, hides the floating edge)
