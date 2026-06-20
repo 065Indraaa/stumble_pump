@@ -11,10 +11,10 @@
 // ============================================================
 import * as THREE from 'three';
 import { scene, renderer, camera } from '../core/Engine.js';
-import { lambertMat, basicMat, makeBackdrop, makeBillboard } from '../core/AssetFactory.js';
+import { lambertMat, basicMat, makeBillboard } from '../core/AssetFactory.js';
 import {
   makeGridFloor, makeMoons, makeOrbs, makeFloatingCandles, makeChartLine,
-  makeBuilding, clearScene, spawnGrid,
+  makeBuilding, clearScene, spawnGrid, make3DClouds, makeFloatingIslands, make3DTileFloor
 } from './env.js';
 import { makeRedCandle, updateRedCandle } from '../entities/RedCandle.js';
 import { makeGreenTrampoline, updateGreenTrampoline, BOUNCE_VELOCITY } from '../entities/GreenTrampoline.js';
@@ -33,20 +33,20 @@ export function buildRaceCourse(cfg) {
   const L = cfg.L, W = cfg.W, H = cfg.H;
   const heightFn = (z) => cfg.heightFn(THREE.MathUtils.clamp(z, 0, L));
 
-  // backdrop panorama (two cylinders for depth)
-  if (cfg.backdrop) {
-    group.add(makeBackdrop(cfg.backdrop, { radius: 230, height: 170, y: 40, z: L * 0.5, start: 0, len: Math.PI * 2 }));
-    group.add(makeBackdrop(cfg.backdrop, { radius: 180, height: 120, y: 25, z: L * 0.5, start: 0, len: Math.PI * 2 }));
-  }
+  // 3D Procedural Sky Elements
+  group.add(make3DClouds(40, 200, 50));
+  group.add(makeFloatingIslands(15, 180));
 
-  // terrain mesh
-  const geo = new THREE.PlaneGeometry(W * 2, L, 28, 120);
-  geo.rotateX(-Math.PI / 2);
-  const pos = geo.attributes.position;
-  for (let i = 0; i < pos.count; i++) { const z = pos.getZ(i) + L / 2; pos.setY(i, heightFn(z)); }
-  geo.computeVertexNormals();
-  const terrain = new THREE.Mesh(geo, lambertMat(cfg.terrainColor));
-  terrain.position.z = L / 2; terrain.receiveShadow = true; group.add(terrain);
+  // 3D Tile Floor for the main race track
+  const floor = make3DTileFloor(W, L, 4, heightFn, 0x4A90E2, 0xFF5CA8); // Cyan and Pink
+  group.add(floor);
+
+  // lane stripes down the center of the track (so floor reads as a "road")
+  const stripeMat = lambertMat(0xFFD23F);
+  for (let z = 4; z < L; z += 8) {
+    const s = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.06, 3), stripeMat);
+    s.position.set(0, heightFn(z) + 0.04, z); group.add(s);
+  }
 
   // side walls
   for (const sx of [-1, 1]) {
@@ -63,7 +63,7 @@ export function buildRaceCourse(cfg) {
   }
   // under-floor (fills void)
   const underGeo = new THREE.PlaneGeometry(W * 4, L); underGeo.rotateX(-Math.PI / 2);
-  const underFloor = new THREE.Mesh(underGeo, lambertMat(0x3A6FA0));
+  const underFloor = new THREE.Mesh(underGeo, lambertMat(0x0B0E1A));
   underFloor.position.set(0, -12, L / 2); group.add(underFloor);
 
   group.add(makeGridFloor(540, -34, cfg.gridColor));
@@ -72,34 +72,34 @@ export function buildRaceCourse(cfg) {
   makeFloatingCandles(group, L, W, 22);
   makeChartLine(group, L, W, 4, cfg.edgeColor);
 
-  // buildings along track
-  const bPalette = [cfg.terrainColor, cfg.edgeColor, 0xFBBF24, 0x22C55E, 0xEC4899, 0x8B5CF6];
+  // buildings along track — pump.fun saturated palette against navy sky
+  const bPalette = [cfg.terrainColor, cfg.edgeColor, 0xFFD23F, 0x5FCB88, 0xFF5CA8, 0xA77BFF, 0x4F8CFF];
   const bTypes = ['cone', 'pyramid', 'dome', 'flat'];
   for (let z = 15; z < L - 10; z += 28) {
     for (const sx of [-1, 1]) {
       const bh = 5 + Math.random() * 6, bw = 4 + Math.random() * 2;
-      const b = makeBuilding({ w: bw, d: bw, h: bh, color: bPalette[Math.floor(z) % bPalette.length], roofColor: bPalette[(Math.floor(z) + 2) % bPalette.length], roofType: bTypes[Math.floor(z / 28) % bTypes.length], winColor: 0xFBBF24, flag: z % 56 === 0 });
+      const b = makeBuilding({ w: bw, d: bw, h: bh, color: bPalette[Math.floor(z) % bPalette.length], roofColor: bPalette[(Math.floor(z) + 2) % bPalette.length], roofType: bTypes[Math.floor(z / 28) % bTypes.length], winColor: 0xFFD23F, flag: z % 56 === 0 });
       b.position.set(sx * (W + 6 + Math.random() * 3), 0, z);
       b.rotation.y = Math.random() * Math.PI;
       group.add(b);
     }
   }
-  const grandstand = makeBuilding({ w: W * 2.2, d: 5, h: 12, color: cfg.edgeColor, roofColor: cfg.terrainColor, roofType: 'flat', winColor: 0xFBBF24, flag: false });
+  const grandstand = makeBuilding({ w: W * 2.2, d: 5, h: 12, color: cfg.edgeColor, roofColor: cfg.terrainColor, roofType: 'flat', winColor: 0xFFD23F, flag: false });
   grandstand.position.set(0, 0, L + 8); group.add(grandstand);
 
-  // start gate
+  // start gate — pump.fun mint pillars
   const sgate = new THREE.Group();
-  for (const sx of [-1, 1]) { const p = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 6, 10), lambertMat(0xFF6B35)); p.position.set(sx * (W - 1), heightFn(0) + 3, 0); sgate.add(p); }
-  const sgTop = new THREE.Mesh(new THREE.BoxGeometry(W * 2, 1, 0.8), lambertMat(0xFBBF24)); sgTop.position.set(0, heightFn(0) + 6, 0); sgate.add(sgTop);
+  for (const sx of [-1, 1]) { const p = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 6, 12), lambertMat(0xFF8A3D)); p.position.set(sx * (W - 1), heightFn(0) + 3, 0); sgate.add(p); }
+  const sgTop = new THREE.Mesh(new THREE.BoxGeometry(W * 2, 1, 0.8), lambertMat(0xFFD23F)); sgTop.position.set(0, heightFn(0) + 6, 0); sgate.add(sgTop);
   group.add(sgate);
 
-  // finish gate
+  // finish gate — pump.fun green pillars
   const gate = new THREE.Group();
-  for (const sx of [-1, 1]) { const p = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 8, 12), lambertMat(0x22C55E)); p.position.set(sx * (W - 1), heightFn(L) + 4, L); gate.add(p); }
-  const beam = new THREE.Mesh(new THREE.BoxGeometry(W * 2, 1.1, 0.5), lambertMat(0x22C55E)); beam.position.set(0, heightFn(L) + 8, L); gate.add(beam);
-  const gTop = new THREE.Mesh(new THREE.BoxGeometry(W * 2, 0.8, 0.8), lambertMat(0xFBBF24)); gTop.position.set(0, heightFn(L) + 9, L); gate.add(gTop);
+  for (const sx of [-1, 1]) { const p = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 8, 14), lambertMat(0x5FCB88)); p.position.set(sx * (W - 1), heightFn(L) + 4, L); gate.add(p); }
+  const beam = new THREE.Mesh(new THREE.BoxGeometry(W * 2, 1.1, 0.5), lambertMat(0x5FCB88)); beam.position.set(0, heightFn(L) + 8, L); gate.add(beam);
+  const gTop = new THREE.Mesh(new THREE.BoxGeometry(W * 2, 0.8, 0.8), lambertMat(0xFFD23F)); gTop.position.set(0, heightFn(L) + 9, L); gate.add(gTop);
   group.add(gate);
-  const finishText = makeBillboard(cfg.finishText || 'TO THE MOON 🚀', 0xffd700, 7);
+  const finishText = makeBillboard(cfg.finishText || 'TO THE MOON', 0x5fcb88, 7);
   finishText.position.set(0, heightFn(L) + 11, L + 3); group.add(finishText);
 
   // ---- obstacles ----
@@ -135,13 +135,13 @@ export function buildRaceCourse(cfg) {
   const pits = cfg.pits || [];
   const movers = [];
   (cfg.movers || []).forEach((md) => {
-    const m = makeMover({ z: md.z, x0: md.x0, x1: md.x1, w: md.w || 3, d: md.d || 3, sp: md.sp || 0.6, color: md.color || 0x3B82F6 });
+    const m = makeMover({ z: md.z, x0: md.x0, x1: md.x1, w: md.w || 3, d: md.d || 3, sp: md.sp || 0.6, color: md.color || 0x5FCB88 });
     m.y = heightFn(md.z) - 0.3; m.mesh.position.y = m.y;
     group.add(m.mesh); movers.push(m);
   });
 
   if (cfg.lava) {
-    const lava = new THREE.Mesh(new THREE.PlaneGeometry(W * 2.4, L), new THREE.MeshBasicMaterial({ color: 0xF97316, transparent: true, opacity: 0.7 }));
+    const lava = new THREE.Mesh(new THREE.PlaneGeometry(W * 2.4, L), new THREE.MeshBasicMaterial({ color: 0xFF5151, transparent: true, opacity: 0.65 }));
     lava.rotation.x = -Math.PI / 2; lava.position.set(0, -8, L / 2); group.add(lava);
   }
 

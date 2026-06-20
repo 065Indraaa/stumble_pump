@@ -1,0 +1,30 @@
+# ============================================================
+# STUMBLE PUMP — Cloudflare Pages config
+# Deploy via:  npm run deploy
+# (requires `npm i -g wrangler` + `wrangler login` once)
+#
+# Alternatively: connect this repo to Cloudflare Pages dashboard
+# and use these settings:
+#   Build command:    npm run build
+#   Build output dir: dist
+#   Root directory:   /
+# ============================================================
+
+name = "stumble-pump"
+compatibility_date = "2024-09-01"
+pages_build_output_dir = "dist"
+
+# Headers: ensure correct MIME types for WASM + long cache for hashed assets.
+# Cloudflare handles .wasm automatically, but we pin cache rules so the
+# 2MB Rapier blob is cached aggressively after first load.
+[headers]
+  # hashed JS/CSS/WASM — immutable cache (filename changes on content change)
+  "/*.js"      = { Cache-Control = "public, max-age=31536000, immutable" }
+  "/*.css"     = { Cache-Control = "public, max-age=31536000, immutable" }
+  "/*.wasm"    = { Cache-Control = "public, max-age=31536000, immutable", Content-Type = "application/wasm" }
+  # fonts (Google Fonts, but cache if proxied)
+  "/*.woff2"   = { Cache-Control = "public, max-age=31536000" }
+  # textures — medium cache
+  "/textures/*" = { Cache-Control = "public, max-age=86400" }
+  # index.html must always revalidate (entry point references latest hashed assets)
+  "/index.html" = { Cache-Control = "public, max-age=0, must-revalidate" }

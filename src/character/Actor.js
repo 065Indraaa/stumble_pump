@@ -161,14 +161,21 @@ export class Actor {
       if (this.isPlayer) spawnSpeedLines(this.pos, f);
     }
 
-    // horizontal movement — accelerate toward wish dir
+    // horizontal movement — accelerate toward wish dir with smooth accel curve
     const spd = MOVE_SPEED * (this.brain.includes('Bot') && this.brain !== 'lobbyBot' ? this.skill : (this.brain === 'lobbyBot' ? 0.55 : 1));
     if (this.diveLock <= 0) {
       if (moving) {
         _wish.normalize();
-        this.vel.x += (_wish.x * spd - this.vel.x) * Math.min(1, ACCEL * dt / spd);
-        this.vel.z += (_wish.z * spd - this.vel.z) * Math.min(1, ACCEL * dt / spd);
-        this.facing = Math.atan2(_wish.x, _wish.z);
+        // frame-rate independent accel toward target velocity (smooth ease)
+        const accelK = 1 - Math.exp(-ACCEL * dt);
+        this.vel.x += (_wish.x * spd - this.vel.x) * accelK;
+        this.vel.z += (_wish.z * spd - this.vel.z) * accelK;
+        // smooth turn toward desired facing (no instant snap)
+        const desiredFacing = Math.atan2(_wish.x, _wish.z);
+        let delta = desiredFacing - this.facing;
+        while (delta > Math.PI) delta -= Math.PI * 2;
+        while (delta < -Math.PI) delta += Math.PI * 2;
+        this.facing += delta * Math.min(1, 10 * dt); // turn rate
       } else {
         const decay = Math.max(0, 1 - FRICTION * dt);
         this.vel.x *= decay; this.vel.z *= decay;

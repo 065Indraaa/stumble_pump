@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import { lambertMat } from '../core/AssetFactory.js';
 
-export function makeMover({ z, x0, x1, w = 3, d = 3, sp = 0.6, color = 0x3B82F6 }) {
+export function makeMover({ z, x0, x1, w = 3, d = 3, sp = 0.6, color = 0x5FCB88 }) {
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, 0.6, d), lambertMat(color));
   mesh.castShadow = true; mesh.receiveShadow = true;
   mesh.position.set(x0, 0, z);

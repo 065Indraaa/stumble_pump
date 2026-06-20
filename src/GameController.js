@@ -18,7 +18,7 @@ import { History } from './store/history.js';
 import { Actor } from './character/Actor.js';
 import { spawnBot } from './character/BotController.js';
 import { SKINS, EMOTES, TRAILS } from './character/skins.js';
-import { makeBackdrop, lambertMat } from './core/AssetFactory.js';
+import { lambertMat } from './core/AssetFactory.js';
 import { clearScene } from './levels/env.js';
 import { MOVE_SPEED } from './config/constants.js';
 
@@ -29,10 +29,10 @@ import { buildLiquidationLane } from './levels/liquidationLane.js';
 import { buildRugpull } from './levels/rugpullRoulette.js';
 
 const MAPS = [
-  { name: 'BONDING CURVE CLIMB', type: 'RACE', emoji: '📈', build: buildBondingCurve, goal: 'First 16 to climb the curve qualify', tip: 'Dodge red candles · bounce green pads · jump the sweepers' },
-  { name: 'RUGPULL ROULETTE', type: 'SURVIVAL', emoji: '🕳️', build: buildRugpull, goal: "Survive 60 seconds — don't fall when platforms rug", tip: 'Platforms flash red before they drop. Grab coins!' },
-  { name: 'MOON MISSION', type: 'RACE', emoji: '🌙', build: buildMoonMission, goal: 'First 16 to reach the moon qualify', tip: 'Jump the gaps · ride the movers · time the wrecking balls' },
-  { name: 'LIQUIDATION LANE', type: 'RACE', emoji: '💀', build: buildLiquidationLane, goal: 'First 16 down the canyon survive', tip: "Don't fall in the lava · hop the green platforms" },
+  { name: 'BONDING CURVE CLIMB', type: 'RACE', build: buildBondingCurve, goal: 'First 16 to climb the curve qualify', tip: 'Dodge red candles · bounce green pads · jump the sweepers' },
+  { name: 'RUGPULL ROULETTE', type: 'SURVIVAL', build: buildRugpull, goal: "Survive 60 seconds — don't fall when platforms rug", tip: 'Platforms flash red before they drop. Grab coins!' },
+  { name: 'MOON MISSION', type: 'RACE', build: buildMoonMission, goal: 'First 16 to reach the moon qualify', tip: 'Jump the gaps · ride the movers · time the wrecking balls' },
+  { name: 'LIQUIDATION LANE', type: 'RACE', build: buildLiquidationLane, goal: 'First 16 down the canyon survive', tip: "Don't fall in the lava · hop the green platforms" },
 ];
 
 export const shared = {
@@ -74,14 +74,21 @@ export function updateTopBar() {
 function buildPreview() {
   clearScene();
   const group = new THREE.Group(); scene.add(group);
-  group.add(makeBackdrop('menu_bg', { radius: 80, height: 90, y: 20 }));
-  const floor = new THREE.Mesh(new THREE.CylinderGeometry(18, 18, 1.5, 32), lambertMat(0x4A90D9));
+  // group.add(makeBackdrop('menu_bg', { radius: 80, height: 90, y: 20 })); // Removed as backdrop is now handled by level logic or 3D elements
+  // pump.fun podium: dark navy disc with mint edge ring
+  const floor = new THREE.Mesh(new THREE.CylinderGeometry(18, 18, 1.5, 40), lambertMat(0x1B1D27));
   floor.position.y = -0.8; floor.receiveShadow = true; group.add(floor);
-  const edge = new THREE.Mesh(new THREE.TorusGeometry(18, 0.3, 8, 64), lambertMat(0xFF6B35));
+  const edge = new THREE.Mesh(new THREE.TorusGeometry(18, 0.3, 10, 72), lambertMat(0x5FCB88));
   edge.rotation.x = -Math.PI / 2; edge.position.y = -0.05; group.add(edge);
+  // podium glow ring (flat, no bloom)
+  const ring = new THREE.Mesh(new THREE.RingGeometry(18.4, 19.6, 64), lambertMat(0x5FCB88));
+  ring.rotation.x = -Math.PI / 2; ring.position.y = -0.04; ring.material.transparent = true; ring.material.opacity = 0.35; group.add(ring);
   if (G.preview) { G.preview.dispose(); }
   G.preview = new Actor(shared.selectedSkin, true, 'player');
   G.preview.pos.set(0, 0, 0);
+  // update menu skin tag
+  const skinNameEl = document.getElementById('skin-name');
+  if (skinNameEl && SKINS[shared.selectedSkin]) skinNameEl.textContent = SKINS[shared.selectedSkin].name;
 }
 
 export function enterMenu() {
@@ -115,7 +122,11 @@ export function enterLobby() {
   document.getElementById('lobby-count').textContent = '1';
   Net.connect();
   Net.setLocal({ name: shared.user?.name || 'Player', skin: shared.selectedSkin });
-  for (let i = 0; i < 5; i++) spawnLobbyBot();
+  // join the public matchmaking room so real peers see each other in lobby
+  if (!G.data.isRoomMatch) Net.joinMatchmaking();
+  Net.setArena(true);   // start broadcasting our position for real-time sync
+  // only seed a couple of bots so the lobby feels alive — real peers fill in
+  for (let i = 0; i < 2; i++) spawnLobbyBot();
   setMode('lobby');
 }
 
@@ -128,26 +139,35 @@ function spawnLobbyBot() {
 
 function updateLobby(dt, t) {
   const d = G.data;
+  // broadcast our lobby position for real-time peer sync
+  if (Net.connected) {
+    Net.setLocal({ pos: { x: G.player.pos.x, y: G.player.pos.y, z: G.player.pos.z }, anim: G.player.anim.state, facing: G.player.facing });
+    Net.publishState();
+    Net.publish();
+    Net.prune();
+    // reconcile remote-peer avatars (real players from other devices)
+    syncRemoteActors(dt, t, G.map, 'lobbyBot');
+  }
+  // spawn filler bots slowly only when offline OR to top up an empty lobby
   d.spawnTimer -= dt;
-  if (d.spawnTimer <= 0 && G.actors.length < d.target) {
+  const realPeerCount = Net.roomPeersList ? Net.roomPeersList().length : 0;
+  const totalActors = G.actors.length;
+  if (d.spawnTimer <= 0 && totalActors < d.target && (Net.failed || (!Net.connected) || totalActors < 4 + realPeerCount)) {
     d.spawnTimer = 0.6 + Math.random() * 0.8;
     spawnLobbyBot();
   }
   G.actors.forEach((a) => a.update(dt, t, G.map));
   G.map.update(dt, t);
   if (Net.connected) {
-    Net.setLocal({ pos: { x: G.player.pos.x, y: G.player.pos.y, z: G.player.pos.z }, anim: G.player.anim.state, facing: G.player.facing });
-    Net.publish();
-    Net.prune();
-    document.getElementById('lobby-count').textContent = Math.min(1 + Net.peers.size + (G.actors.length - 1), 32);
+    document.getElementById('lobby-count').textContent = Math.min(1 + realPeerCount + (totalActors - 1), 32);
   } else {
-    document.getElementById('lobby-count').textContent = G.actors.length;
+    document.getElementById('lobby-count').textContent = totalActors;
   }
   const total = G.actors.length;
   const statusEl = document.getElementById('net-status');
   const fs = document.getElementById('force-start');
   if (total >= 32) statusEl.textContent = 'Lobby full — match starting!';
-  else if (Net.connected) statusEl.textContent = `Searching for degens… ${total}/32`;
+  else if (Net.connected) statusEl.textContent = `${realPeerCount} live player${realPeerCount === 1 ? '' : 's'} · ${total}/32 in lobby`;
   else statusEl.textContent = Net.failed ? 'Offline mode — bots only' : 'Connecting…';
   if ((Net.failed || total >= 8) && total < 32) fs.classList.remove('hidden');
   else fs.classList.add('hidden');
@@ -161,6 +181,47 @@ function updateLobby(dt, t) {
     if (n > 0 && Math.floor(d.cdTimer) !== d._lastBeep) { d._lastBeep = Math.floor(d.cdTimer); SFX.beep(); }
     if (d.cdTimer >= 5) { cdEl.classList.add('hidden'); enterRoulette(); }
   }
+}
+
+// ============================================================
+// REAL-TIME PEER SYNC — spawn/move/remove avatars for live MQTT players.
+// Remote actors are tagged _remote=true and skip local physics control;
+// we directly drive their pos/facing/anim from the network snapshot.
+// ============================================================
+function syncRemoteActors(dt, t, map, fallbackBrain) {
+  if (!Net.peerStateList) return;
+  let snapshots = [];
+  try { snapshots = Net.peerStateList(); } catch (e) { return; }
+  const liveIds = new Set(snapshots.map((s) => s.id));
+  // remove remote actors whose peer dropped
+  for (let i = G.actors.length - 1; i >= 0; i--) {
+    const a = G.actors[i];
+    if (a._remote && !liveIds.has(a._peerId)) {
+      a.dispose(); G.actors.splice(i, 1);
+    }
+  }
+  // upsert + drive each live remote
+  snapshots.forEach((s) => {
+    let a = G.actors.find((x) => x._remote && x._peerId === s.id);
+    if (!a) {
+      a = new Actor(s.skin || randomBotSkinLocal(), false, fallbackBrain || 'lobbyBot');
+      a._remote = true;
+      a._peerId = s.id;
+      a.addNameplate(s.name || 'Player');
+      G.actors.push(a);
+    }
+    // smooth interpolation toward the networked position (avoid jitter)
+    const tx = s.pos.x, ty = s.pos.y, tz = s.pos.z;
+    const k = Math.min(1, 14 * dt);
+    a.pos.x += (tx - a.pos.x) * k;
+    a.pos.y += (ty - a.pos.y) * k;
+    a.pos.z += (tz - a.pos.z) * k;
+    // facing
+    if (typeof s.facing === 'number') a.facing = s.facing;
+    a.root.rotation.y = -a.facing;
+    // animation
+    try { a.anim.set(s.anim || 'idle'); a.anim.update(dt, t); } catch (e) {}
+  });
 }
 
 // ============================================================
@@ -178,7 +239,7 @@ function enterRoulette() {
   seq.push(MAPS[pick]);
   seq.forEach((m) => {
     const c = document.createElement('div'); c.className = 'slot-card';
-    c.innerHTML = `<div class="sc-emoji">${m.emoji}</div><div class="sc-name">${m.name}</div><div class="sc-type">${m.type}</div>`;
+    c.innerHTML = `<div class="sc-name">${m.name}</div><div class="sc-type">${m.type}</div>`;
     reel.appendChild(c);
   });
   const cardH = 150, finalY = -(seq.length - 1) * cardH;
@@ -221,7 +282,9 @@ function enterMatch(mapDef) {
   Input.camYaw = 0; Input.camPitch = 0.28;
   const botBrain = G.map.type === 'race' ? 'raceBot' : 'survivalBot';
   const fieldSize = Math.max(8, G.data.fieldSize || 32);
-  const realPeers = Net.roomPeersList();
+  // Real MQTT peers: spawn as _remote avatars (driven by syncRemoteActors
+  // every frame, so real cross-device players move live in the arena).
+  const realPeers = Net.roomPeersList ? Net.roomPeersList() : [];
   let spawnIdx = 1;
   for (const peer of realPeers) {
     if (spawnIdx >= fieldSize) break;
@@ -230,14 +293,19 @@ function enterMatch(mapDef) {
     a.checkpoint.copy(a.pos);
     a.addNameplate(peer.name || 'Player');
     a._isRealPeer = true;
+    a._remote = true;
+    a._peerId = peer.id;
     G.actors.push(a); spawnIdx++;
   }
+  // Fill remaining slots with bots
   for (let i = spawnIdx; i < fieldSize; i++) {
     const b = new Actor(randomBotSkinLocal(), false, botBrain);
     b.pos.copy(sp[i % sp.length]); b.pos.x += (Math.random() - 0.5);
     b.checkpoint.copy(b.pos);
     G.actors.push(b);
   }
+  // ensure net is in arena-broadcast mode so peers see us move
+  Net.setArena(true);
   G.data.qualifyTarget = Math.ceil(fieldSize / 2);
   G.data.survive = G.map.type === 'survival';
   G.data.timer = G.map.surviveTime || 45;
@@ -253,8 +321,8 @@ function enterMatch(mapDef) {
   const objBadge = document.getElementById('objective-badge'), objText = document.getElementById('objective-text');
   const rprog = document.getElementById('race-progress');
   objBadge.classList.remove('hidden');
-  if (G.data.survive) { objText.textContent = `⏱ Survive ${G.map.surviveTime || 45}s — don't fall`; rprog.classList.add('hidden'); }
-  else { objText.textContent = `🏁 Reach the finish — top ${G.data.qualifyTarget} qualify`; rprog.classList.remove('hidden'); document.getElementById('rp-fill').style.width = '0%'; }
+  if (G.data.survive) { objText.textContent = `Survive ${G.map.surviveTime || 45}s — don't fall`; rprog.classList.add('hidden'); }
+  else { objText.textContent = `Reach the finish — top ${G.data.qualifyTarget} qualify`; rprog.classList.remove('hidden'); document.getElementById('rp-fill').style.width = '0%'; }
   showArenaIntro(mapDef);
   G.data.phase = 'countdown'; G.data.cd = 3.9; G.data.cdShown = 4;
   document.getElementById('big-countdown').classList.remove('hidden');
@@ -265,7 +333,7 @@ function showArenaIntro(mapDef) {
   const ai = document.getElementById('arena-intro');
   document.getElementById('ai-round').textContent = 'ROUND ' + shared.round + ' OF 3';
   document.getElementById('ai-map').textContent = mapDef.name;
-  document.getElementById('ai-goal').textContent = (mapDef.type === 'SURVIVAL' ? '🕳️ ' : '🏁 ') + (mapDef.goal || '');
+  document.getElementById('ai-goal').textContent = mapDef.goal || '';
   document.getElementById('ai-tip').textContent = MOBILE ? 'Joystick to move · JUMP · DIVE' : (mapDef.tip || 'WASD · SPACE · SHIFT');
   ai.classList.add('show');
   setTimeout(() => ai.classList.remove('show'), 2600);
@@ -351,13 +419,13 @@ function showResult(qualified) {
   if (qualified && isFinalRound) { showWinnerScreen(); return; }
   if (qualified) {
     ui.classList.add('qualified');
-    document.getElementById('result-text').textContent = '✅ QUALIFIED!';
+    document.getElementById('result-text').textContent = 'QUALIFIED';
     stats.innerHTML = `<div class="rs-big">#${p.finishPos || '-'}</div>Round ${shared.round} cleared · WAGMI`;
     p.anim.set('celebrate'); contBtn.textContent = 'CONTINUE'; quitBtn.classList.add('hidden');
     SFX.qualify();
   } else {
     ui.classList.add('eliminated');
-    document.getElementById('result-text').textContent = '❌ REKT';
+    document.getElementById('result-text').textContent = 'REKT';
     stats.innerHTML = `<div class="rs-big">Round ${shared.round}</div>You got rugged. Paper hands never make it.`;
     p.anim.set('ragdoll'); contBtn.textContent = 'RETRY'; quitBtn.classList.remove('hidden');
     SFX.eliminate();
@@ -384,16 +452,16 @@ function showWinnerScreen() {
   const podium = ranked.slice(0, 3);
   const winnerName = u ? u.name : 'Degen';
   const winnerSol = u ? (u.solana || '') : '';
-  document.getElementById('winner-name').textContent = '👑 ' + winnerName;
-  document.getElementById('winner-sol').textContent = winnerSol ? '💳 ' + winnerSol : '💳 No Solana address set';
+  document.getElementById('winner-name').textContent = winnerName;
+  document.getElementById('winner-sol').textContent = winnerSol ? winnerSol : 'No Solana address set';
   document.getElementById('winner-stats').textContent = `PUMP KING of ${G.actors.length} degens · ${G.data.roomRounds || 3} rounds survived`;
   const podiumEl = document.getElementById('winner-podium'); podiumEl.innerHTML = '';
-  const medals = ['🥇', '🥈', '🥉']; const cls = ['gold', 'silver', 'bronze'];
+  const ranks = ['1', '2', '3']; const cls = ['gold', 'silver', 'bronze'];
   podium.forEach((a, i) => {
     const row = document.createElement('div'); row.className = 'podium-row ' + cls[i];
     const name = a.isPlayer ? winnerName : ((SKINS[a.rig.skinKey] && SKINS[a.rig.skinKey].name) || 'Degen');
     const sol = a.isPlayer ? winnerSol : '';
-    row.innerHTML = `<span class="pr-rank">${medals[i]}</span><span class="pr-name">${name}</span><span class="pr-sol">${sol ? '💳 ' + sol.slice(0, 8) + '…' + sol.slice(-4) : ''}</span>`;
+    row.innerHTML = `<span class="pr-rank">${ranks[i]}</span><span class="pr-name">${name}</span><span class="pr-sol">${sol ? sol.slice(0, 8) + '…' + sol.slice(-4) : ''}</span>`;
     podiumEl.appendChild(row);
   });
   showScreen('winner-screen');
@@ -422,8 +490,18 @@ function buildCustomGrid(tab) {
     const cell = document.createElement('div');
     const owned = tab === 'skins' ? skinOwned(item.k) : true;
     const selected = tab === 'skins' ? shared.selectedSkin === item.k : tab === 'emotes' ? shared.selectedEmote === item.k : shared.selectedTrail === item.k;
-    cell.className = 'cust-cell ' + (item.rarity || 'common') + (selected ? ' sel' : '') + (owned ? '' : ' locked');
-    cell.innerHTML = `<div class="cc-emoji">${item.emoji}</div><div class="cc-name">${item.name || item.n}</div><div class="cc-cost">${owned ? (selected ? 'EQUIPPED' : 'OWNED') : (item.cost + '🪙')}</div>`;
+    cell.className = 'cust-card rarity-' + (item.rarity || 'common') + (selected ? ' selected' : '') + (owned ? '' : ' locked');
+    // build a CSS color swatch using the item's body color (no emoji)
+    const bodyHex = '#' + (item.body || 0x2F66E0).toString(16).padStart(6, '0');
+    const accentHex = '#' + (item.accent || 0x5FCB88).toString(16).padStart(6, '0');
+    const swatchStyle = `background:linear-gradient(135deg,${bodyHex},${accentHex});`;
+    let badge;
+    if (!owned) badge = `<div class="cc-cost">${item.cost}</div>`;
+    else if (selected) badge = `<div class="cc-equipped">EQUIPPED</div>`;
+    else badge = '';
+    const name = item.name || item.n;
+    const kol = item.kol ? `<div class="cc-kol">${item.kol}</div>` : '';
+    cell.innerHTML = `<div class="cc-swatch" style="${swatchStyle}"></div><div class="cc-name">${name}</div>${kol}<div class="cc-rar rarity ${item.rarity || 'common'}">${(item.rarity || 'common').toUpperCase()}</div>${badge}`;
     cell.onclick = () => onCustomSelect(tab, item);
     grid.appendChild(cell);
   });
@@ -474,39 +552,93 @@ function toast(msg) {
 // ============================================================
 // ROOMS / HISTORY
 // ============================================================
-function enterRooms() { showScreen('rooms-screen'); renderRoomList(); setMode('rooms'); }
+function enterRooms() {
+  showScreen('rooms-screen');
+  Net.connect();
+  renderRoomList();
+  // refresh the visible-room directory periodically while on this screen
+  stopRoomPolling();
+  roomPollInterval = setInterval(renderRoomList, 2000);
+  setMode('rooms');
+}
 
 function renderRoomList() {
-  const list = Rooms.list();
+  // merge local rooms + cross-device MQTT-discovered rooms
+  const localList = Rooms.list().map((r) => ({ ...r, _local: true }));
+  let remoteList = [];
+  try { remoteList = Net.visibleRooms(); } catch (e) {}
+  // de-dup by id (a local room may also be visible remotely)
+  const seen = new Set();
+  const merged = [...localList, ...remoteList].filter((r) => {
+    if (seen.has(r.id)) return false; seen.add(r.id); return true;
+  });
   const el = document.getElementById('room-list'); el.innerHTML = '';
-  if (list.length === 0) { el.innerHTML = '<div class="empty-hint">No active rooms. Create one! 🏠</div>'; return; }
-  list.forEach((r) => {
-    const row = document.createElement('div'); row.className = 'room-row';
-    row.innerHTML = `<div class="rr-name">${r.name}</div><div class="rr-meta">${r.players.length}/${r.max} · ${r.rounds} rounds · ${roomCountdownStr(r.start)}</div><button class="nav-btn secondary small">JOIN</button>`;
-    row.querySelector('button').onclick = () => { SFX.click(); const joined = Rooms.join(r.id, shared.user?.name || 'Player'); if (joined) { currentRoom = joined; showRoomWaiting(); startRoomPolling(); } };
+  if (merged.length === 0) {
+    el.innerHTML = '<div class="room-empty">No active rooms yet.<br>Create one to invite friends — rooms are live across devices!</div>';
+    return;
+  }
+  merged.forEach((r) => {
+    const row = document.createElement('div'); row.className = 'room-card';
+    const cd = roomCountdownStr(r.start);
+    const n = r.players ? r.players.length : 1;
+    row.innerHTML = `<div class="rc-info"><div class="rc-name">${r.name}</div><div class="rc-meta"><span>${n}/${r.max || 32} players</span><span>${r.rounds || 3} rounds</span>${cd ? `<span class="rc-start">${cd}</span>` : ''}</div></div><button class="nav-btn primary small rc-join">JOIN</button>`;
+    row.querySelector('button').onclick = (ev) => { ev.stopPropagation(); SFX.click(); joinAnyRoom(r); };
     el.appendChild(row);
   });
 }
 
-function showRoomWaiting() { showScreen('room-waiting'); renderRoomPlayers(); updateRoomInfo(); setMode('room-waiting'); }
+function joinAnyRoom(r) {
+  const name = shared.user?.name || 'Player';
+  // try local first (same device)
+  const joined = r._local ? Rooms.join(r.id, name) : null;
+  if (joined) {
+    currentRoom = joined;
+  } else {
+    // cross-device join via MQTT
+    Net.joinRoomRemote(r.id, name, shared.selectedSkin);
+    currentRoom = { id: r.id, name: r.name, max: r.max || 32, rounds: r.rounds || 3, start: r.start || null, players: [{ name, host: false }] };
+  }
+  showRoomWaiting();
+  startRoomPolling();
+}
+
+function showRoomWaiting() { showScreen('room-waiting'); Net.connect(); renderRoomPlayers(); updateRoomInfo(); setMode('room-waiting'); }
 
 function renderRoomPlayers() {
   if (!currentRoom) return;
   const el = document.getElementById('rw-player-list'); el.innerHTML = '';
+  const myName = shared.user?.name || 'Player';
+  // local me + local players
+  const seen = new Set();
   currentRoom.players.forEach((p) => {
-    const row = document.createElement('div'); row.className = 'rw-player';
-    row.innerHTML = `<span class="rw-p-name">${p.name}${p.host ? ' 👑' : ''}</span>`;
+    if (seen.has(p.name)) return; seen.add(p.name);
+    const isHost = p.host || currentRoom.players[0]?.name === p.name;
+    const isMe = p.name === myName;
+    const row = document.createElement('div'); row.className = 'rw-player' + (isHost ? ' host' : '');
+    row.innerHTML = `<div class="rw-avatar"></div><div class="rw-pname">${p.name}${isMe ? ' (You)' : ''}</div>${isHost ? '<span class="rw-host-tag">HOST</span>' : ''}`;
     el.appendChild(row);
   });
-  document.getElementById('rw-count').textContent = currentRoom.players.length;
+  // live MQTT peers in this room (real cross-device players)
+  let peers = [];
+  try { peers = Net.roomPeersList(); } catch (e) {}
+  peers.forEach((rp) => {
+    if (seen.has(rp.name)) return; seen.add(rp.name);
+    const row = document.createElement('div'); row.className = 'rw-player' + (rp.host ? ' host' : '');
+    row.innerHTML = `<div class="rw-avatar"></div><div class="rw-pname">${rp.name}</div>${rp.host ? '<span class="rw-host-tag">HOST</span>' : ''}`;
+    el.appendChild(row);
+  });
+  const total = seen.size;
+  document.getElementById('rw-count').textContent = total;
   document.getElementById('rw-max').textContent = currentRoom.max;
 }
 
 function updateRoomInfo() {
   if (!currentRoom) return;
   document.getElementById('rw-name').textContent = currentRoom.name;
-  document.getElementById('rw-meta').textContent = `${currentRoom.players.length}/${currentRoom.max} players · ${currentRoom.rounds} rounds`;
+  const count = 1 + (Net.roomPeersList?.().length || 0);
+  document.getElementById('rw-meta').textContent = `${count}/${currentRoom.max} players · ${currentRoom.rounds} rounds`;
   document.getElementById('rw-start-time').textContent = roomCountdownStr(currentRoom.start);
+  // host = first local player, OR the room host flag from MQTT
   const isHost = currentRoom.players[0]?.name === (shared.user?.name || 'Player');
   document.getElementById('rw-force-start').classList.toggle('hidden', !isHost);
   if (currentRoom.start) {
@@ -517,19 +649,29 @@ function updateRoomInfo() {
       cdEl.classList.remove('hidden');
       const mins = Math.floor(diff / 60000), secs = Math.floor((diff % 60000) / 1000);
       cdEl.textContent = `Auto-start in ${mins}m ${secs.toString().padStart(2, '0')}s`;
-      if (diff <= 0) startRoomMatch();
     } else cdEl.classList.add('hidden');
   }
 }
+
+// listen for host-initiated starts so guests auto-launch the match
+window.addEventListener('sp_room_start', (e) => {
+  if (G.mode === 'room-waiting' && currentRoom && e.detail?.roomId === currentRoom.id) {
+    startRoomMatch();
+  }
+});
 
 function startRoomPolling() {
   stopRoomPolling();
   roomPollInterval = setInterval(() => {
     if (!currentRoom) return;
-    const fresh = Rooms.get(currentRoom.id);
-    if (fresh) { currentRoom = fresh; renderRoomPlayers(); updateRoomInfo(); }
-    else { stopRoomPolling(); enterMenu(); }
-  }, 2000);
+    // refresh local copy
+    const fresh = currentRoom._local === false ? null : Rooms.get(currentRoom.id);
+    if (fresh) currentRoom = fresh;
+    // heartbeat our presence + refresh peer list
+    try { Net.beatRoom(true); Net.prune(); } catch (e) {}
+    renderRoomPlayers();
+    updateRoomInfo();
+  }, 1000);
 }
 function stopRoomPolling() { if (roomPollInterval) { clearInterval(roomPollInterval); roomPollInterval = null; } }
 
@@ -538,13 +680,18 @@ function startRoomMatch() {
   stopRoomPolling();
   G.data.roomRounds = currentRoom.rounds;
   G.data.isRoomMatch = true;
-  G.data.fieldSize = Math.max(8, currentRoom.players.length);
+  // count real MQTT peers so the field is sized to live players
+  const peerCount = 1 + (Net.roomPeersList?.().length || 0);
+  G.data.fieldSize = Math.max(8, peerCount);
+  // broadcast start to all peers in this room so guests launch too
+  Net.announceRoomStart();
   shared.round = 1;
   enterLobby();
 }
 
 function leaveRoom() {
   if (currentRoom) Rooms.leave(currentRoom.id, shared.user?.name || 'Player');
+  Net.leaveRoom();
   currentRoom = null;
   stopRoomPolling();
   enterMenu();
@@ -554,11 +701,11 @@ function showHistory() {
   showScreen('history-screen');
   const list = History.all();
   const el = document.getElementById('history-list'); el.innerHTML = '';
-  if (list.length === 0) { el.innerHTML = '<div class="empty-hint">No matches yet. Go win some! 🏆</div>'; return; }
+  if (list.length === 0) { el.innerHTML = '<div class="room-empty">No matches yet.<br>Go win some!</div>'; return; }
   list.forEach((h) => {
-    const row = document.createElement('div'); row.className = 'history-row';
+    const row = document.createElement('div'); row.className = 'he-row';
     const d = new Date(h.date);
-    row.innerHTML = `<div class="hr-crown">👑</div><div class="hr-info"><div class="hr-name">${h.winnerName}</div><div class="hr-meta">${h.map || 'Unknown'} · ${h.players} degens · ${h.rounds} rounds</div></div><div class="hr-date">${d.toLocaleDateString()}</div>`;
+    row.innerHTML = `<div class="he-crown"></div><div class="he-info"><div class="he-name">${h.winnerName}</div><div class="he-meta">${h.map || 'Unknown'} · ${h.players} degens · ${h.rounds} rounds</div></div><div class="he-date">${d.toLocaleDateString()}</div>`;
     el.appendChild(row);
   });
   setMode('history');
@@ -578,9 +725,17 @@ function updateCamera(dt) {
   }
   if (G.mode === 'lobby' || G.mode === 'match') {
     const p = G.player.pos;
-    _camTarget.set(p.x + Math.sin(Input.camYaw) * 9, p.y + 4 + Input.camPitch * 3, p.z + Math.cos(Input.camYaw) * 9);
-    camera.position.lerp(_camTarget, G.mode === 'match' ? 0.12 : 0.08);
-    camera.lookAt(p.x, p.y + 1, p.z);
+    // look-ahead: shift camera target slightly in player's movement direction
+    const vx = G.player.vel.x, vz = G.player.vel.z;
+    const speed = Math.hypot(vx, vz);
+    const laScale = G.mode === 'match' ? 0.6 : 0.3;
+    const laX = speed > 0.1 ? (vx / speed) * Math.min(speed, 4) * laScale : 0;
+    const laZ = speed > 0.1 ? (vz / speed) * Math.min(speed, 4) * laScale : 0;
+    _camTarget.set(p.x + laX + Math.sin(Input.camYaw) * 9, p.y + 4 + Input.camPitch * 3, p.z + laZ + Math.cos(Input.camYaw) * 9);
+    // frame-rate-independent smooth lerp (slightly slower for cinematic feel)
+    const k = 1 - Math.exp(-(G.mode === 'match' ? 8 : 6) * dt);
+    camera.position.lerp(_camTarget, k);
+    camera.lookAt(p.x + laX * 0.5, p.y + 1, p.z + laZ * 0.5);
     return;
   }
   if (G.mode === 'roulette' || G.mode === 'winner') { camera.position.lerp(_v1.set(0, 4, 8), 0.05); camera.lookAt(0, 2, 0); return; }
@@ -611,7 +766,7 @@ function drawMinimap() {
   const scale = G.map && G.map.length ? 100 / G.map.length : 0.5;
   G.actors.forEach((a) => {
     if (a.dead || a.eliminated) return;
-    cx.fillStyle = a.isPlayer ? '#FBBF24' : '#ffffff';
+    cx.fillStyle = a.isPlayer ? '#5FCB88' : '#F4F6FB';
     const x = 60 + a.pos.x * 1.5;
     const z = 10 + a.pos.z * scale;
     cx.beginPath(); cx.arc(x, Math.min(110, z), a.isPlayer ? 4 : 2.5, 0, Math.PI * 2); cx.fill();
@@ -688,6 +843,10 @@ export function wireAll() {
     const rounds = parseInt(document.getElementById('room-rounds').value) || 3;
     const startUTC = startVal ? new Date(startVal).toISOString() : null;
     currentRoom = Rooms.create(name, max, startUTC, rounds);
+    currentRoom._local = true;
+    // broadcast this room cross-device so friends on other devices can see+join
+    Net.connect();
+    Net.hostRoom(currentRoom);
     showRoomWaiting(); startRoomPolling();
   });
   click('rw-leave', leaveRoom);

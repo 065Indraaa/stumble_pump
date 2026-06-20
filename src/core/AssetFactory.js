@@ -18,7 +18,13 @@ export function gradientMap() {
 }
 
 // ---- material factories ----
-export function toonMat(color) { return new THREE.MeshToonMaterial({ color, gradientMap: gradientMap() }); }
+export function toonMat(color) { 
+  return new THREE.MeshStandardMaterial({ 
+    color, 
+    roughness: 0.2, 
+    metalness: 0.1 
+  }); 
+}
 export function lambertMat(color) { return new THREE.MeshLambertMaterial({ color }); }
 export function basicMat(color) { return new THREE.MeshBasicMaterial({ color }); }
 export function metalMat(color, metal = 0.9, rough = 0.15) {
@@ -42,56 +48,6 @@ export function tex(url) {
     TEXCACHE[url] = t;
   }
   return TEXCACHE[url];
-}
-
-// ---- sky themes per arena ----
-export const SKY_THEMES = {
-  bonding:     { top: '#5BC0F8', mid: '#7DD3F0', bot: '#A8E6F5', glow: '#E0F4FA', sun: '#FFF6D6', stars: false },
-  rugpull:     { top: '#5B2C9E', mid: '#8B5CF6', bot: '#C4B5FD', glow: '#F5F3FF', sun: '#FFE4B0', stars: true },
-  moon:        { top: '#0B1E4D', mid: '#1E3A8A', bot: '#3B82F6', glow: '#DBEAFE', sun: '#E8EEFF', stars: true },
-  liquidation: { top: '#7C2D12', mid: '#EA580C', bot: '#FB923C', glow: '#FFF7ED', sun: '#FFE6B0', stars: false },
-  menu_bg:     { top: '#3B82F6', mid: '#60A5FA', bot: '#A8E6F5', glow: '#E0F4FA', sun: '#FFF6D6', stars: false },
-};
-
-const SKY_TEX_CACHE = {};
-export function makeSkyTexture(themeKey) {
-  if (SKY_TEX_CACHE[themeKey]) return SKY_TEX_CACHE[themeKey];
-  const th = SKY_THEMES[themeKey] || SKY_THEMES.menu_bg;
-  const cv = document.createElement('canvas');
-  cv.width = 16; cv.height = 512;
-  const cx = cv.getContext('2d');
-  const g = cx.createLinearGradient(0, 0, 0, 512);
-  g.addColorStop(0, th.top); g.addColorStop(0.55, th.mid); g.addColorStop(0.85, th.bot); g.addColorStop(1, th.glow);
-  cx.fillStyle = g; cx.fillRect(0, 0, 16, 512);
-  if (th.stars) {
-    cx.fillStyle = '#ffffff';
-    for (let i = 0; i < 80; i++) {
-      const y = Math.random() * 340; const a = 0.25 + Math.random() * 0.6;
-      cx.globalAlpha = a; cx.fillRect(Math.random() * 16, y, 1, 1);
-    }
-    cx.globalAlpha = 1;
-  }
-  const t = new THREE.CanvasTexture(cv);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearFilter;
-  SKY_TEX_CACHE[themeKey] = t;
-  return t;
-}
-
-// ---- curved panoramic backdrop (cylinder facing inward) ----
-export function makeBackdrop(themeKey, opts = {}) {
-  const radius = opts.radius || 240;
-  const height = opts.height || 150;
-  const yPos = opts.y != null ? opts.y : 30;
-  const startAngle = opts.start != null ? opts.start : 0;
-  const lenAngle = opts.len != null ? opts.len : Math.PI * 2;
-  const geo = new THREE.CylinderGeometry(radius, radius, height, 48, 1, true, startAngle, lenAngle);
-  const mat = new THREE.MeshBasicMaterial({ map: makeSkyTexture(themeKey), side: THREE.BackSide, fog: false, depthWrite: false });
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.position.set(opts.x || 0, yPos, opts.z || 0);
-  mesh.rotation.y = opts.rot || 0;
-  mesh.renderOrder = -10;
-  return mesh;
 }
 
 // ---- billboard text sprite (canvas-based) ----

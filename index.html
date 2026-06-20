@@ -2,7 +2,14 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
+<!-- PWA / mobile fullscreen web-app: no search bar, standalone, fits viewport -->
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="STUMBLE PUMP" />
+<meta name="theme-color" content="#0B0E1A" />
+<meta name="application-name" content="STUMBLE PUMP" />
 <title>STUMBLE PUMP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -17,28 +24,17 @@
 <div id="arena-intro">
   <div class="ai-round" id="ai-round">ROUND 1 OF 3</div>
   <div class="ai-map" id="ai-map">BONDING CURVE CLIMB</div>
-  <div class="ai-goal" id="ai-goal">🏁 First 16 to the moon qualify</div>
+  <div class="ai-goal" id="ai-goal">First 16 to the moon qualify</div>
   <div class="ai-tip" id="ai-tip">WASD to run · SPACE to jump · SHIFT to dive</div>
 </div>
 
-<!-- LOADING — trading terminal theme -->
+<!-- LOADING — pump.fun degen terminal -->
 <div id="loading-screen">
   <div class="boot-chart" id="boot-chart"></div>
-  <div class="boot-floats">
-    <span class="bf" style="left:8%;top:15%;animation-delay:0s">🚀</span>
-    <span class="bf" style="left:85%;top:20%;animation-delay:1.2s">💎</span>
-    <span class="bf" style="left:15%;top:70%;animation-delay:2.4s">🪙</span>
-    <span class="bf" style="left:78%;top:65%;animation-delay:0.6s">📈</span>
-    <span class="bf" style="left:50%;top:10%;animation-delay:1.8s">🌙</span>
-    <span class="bf" style="left:92%;top:45%;animation-delay:3s">🔥</span>
-    <span class="bf" style="left:5%;top:45%;animation-delay:0.9s">💰</span>
-    <span class="bf" style="left:45%;top:82%;animation-delay:2.1s">🦍</span>
-  </div>
   <div class="boot-logo-wrap">
-    <img id="boot-logo" src="/textures/logo.jpeg" alt="STUMBLE PUMP" />
   </div>
   <div class="boot-title">STUMBLE <span class="accent">PUMP</span></div>
-  <div class="boot-subtitle">PARTY ROYALE · SOLANA MAINNET</div>
+  <div class="boot-subtitle">PARTY ROYALE · FUN ARENA</div>
   <div class="loader-shell">
     <div class="loader-row">
       <span class="loader-label">Loading liquidity</span>
@@ -48,13 +44,14 @@
     <div class="loader-pct" id="loader-pct">0%</div>
   </div>
   <div class="loader-tip" id="loader-tip">Loading degen physics…</div>
-  <div class="boot-tagline">32 DEGENS · 1 PUMP KING · INFINITE COPE</div>
+  <div id="boot-debug" style="position:relative;z-index:3;font-family:'Courier New',monospace;font-size:10px;color:#64748b;margin-top:2px;min-height:12px;">init…</div>
+  <div class="boot-tagline">32 PLAYERS · 1 CHAMPION · INFINITE FUN</div>
 </div>
 
 <div id="err-overlay" style="display:none;position:fixed;inset:0;z-index:200;background:#1a0010;color:#ff6b6b;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:30px;text-align:center;font-family:Inter,sans-serif;">
-  <div style="font-family:'Fredoka One',sans-serif;font-size:28px;color:#ff1744;">⚠ Failed to load</div>
+  <div style="font-family:'Fredoka One',sans-serif;font-size:28px;color:#ff1744;">Failed to load</div>
   <pre id="err-msg" style="max-width:90%;white-space:pre-wrap;font-size:13px;color:#ffaaaa;"></pre>
-  <button onclick="location.reload()" style="font-family:'Fredoka One',sans-serif;background:#ff6b00;color:#fff;border:none;border-radius:50px;padding:12px 28px;font-size:16px;cursor:pointer;">RELOAD</button>
+  <button onclick="location.reload()" style="font-family:'Fredoka One',sans-serif;background:#5FCB88;color:#06121A;border:none;border-radius:50px;padding:12px 28px;font-size:16px;cursor:pointer;">RELOAD</button>
 </div>
 
 <!-- AUTH -->
@@ -67,62 +64,86 @@
       <button class="auth-tab active" data-atab="login">LOGIN</button>
       <button class="auth-tab" data-atab="register">REGISTER</button>
     </div>
-    <input id="auth-user" class="auth-input" placeholder="Degen name" maxlength="16" autocomplete="off" spellcheck="false" />
+    <input id="auth-user" class="auth-input" placeholder="Player name" maxlength="16" autocomplete="off" spellcheck="false" />
     <input id="auth-pass" class="auth-input" type="password" placeholder="Password" maxlength="32" />
     <input id="auth-sol" class="auth-input" placeholder="Solana wallet address" maxlength="44" autocomplete="off" spellcheck="false" />
     <div id="auth-msg" class="auth-msg"></div>
     <button id="auth-submit" class="nav-btn primary">LOGIN</button>
-    <button id="auth-guest" class="nav-btn secondary small">⚡ PLAY AS GUEST</button>
-    <div class="auth-footer">32 degens enter. 1 PUMP KING leaves. 🚀</div>
+    <button id="auth-guest" class="nav-btn secondary small">PLAY AS GUEST</button>
+    <div class="auth-footer">32 players enter. 1 CHAMPION leaves.</div>
   </div>
 </div>
 
-<!-- MAIN MENU -->
+<!-- MAIN MENU — Stumble Guys style: character center, big PLAY, side panels -->
 <div id="main-menu" class="screen hidden">
   <div id="top-bar">
     <div id="player-info">
-      <div class="avatar">🦍</div>
+      <div class="avatar"><div class="av-ring"></div></div>
       <div class="pi-text">
-        <div class="pi-name">DegenKing</div>
+        <div class="pi-name">Player1</div>
         <div class="pi-level">LVL <span id="player-level">42</span></div>
       </div>
     </div>
     <div id="currency">
-      <div class="cur-pill"><span class="cur-ico">💎</span><span id="gem-count">128</span></div>
-      <div class="cur-pill"><span class="cur-ico">🪙</span><span id="coin-count">9,420</span></div>
-      <button id="settings-btn" class="icon-btn">⚙</button>
+      <div class="cur-pill"><span class="cur-ico gem"></span><span id="gem-count">128</span></div>
+      <div class="cur-pill"><span class="cur-ico coin"></span><span id="coin-count">9,420</span></div>
+      <button id="settings-btn" class="icon-btn" aria-label="Settings"></button>
     </div>
   </div>
-  <div id="news-ticker"><div id="ticker-text">🔥 New Map: RUGPULL ROULETTE is LIVE! &nbsp;&nbsp;•&nbsp;&nbsp; 💰 Season 3: PUMP SZN &nbsp;&nbsp;•&nbsp;&nbsp; 🚀 32 degens. 1 PUMP KING. &nbsp;&nbsp;•&nbsp;&nbsp; 📈 WAGMI &nbsp;&nbsp;•&nbsp;&nbsp; 🌙 4 maps. Infinite cope.</div></div>
+
+  <div id="news-ticker"><div id="ticker-text">SEASON 3 IS LIVE ·&nbsp; NEW MAP RUGPULL ROULETTE ·&nbsp; 32 PLAYERS, 1 CHAMPION ·&nbsp; PLAY NOW ·&nbsp; 4 MAPS, INFINITE FUN ·&nbsp; BONDING CURVE CLIMB IS LIVE</div></div>
+
   <div class="menu-content">
-    <div id="missions-panel" class="glass-panel">
-      <div class="panel-title">DAILY MISSIONS</div>
-      <div class="mission"><span class="m-check">☐</span> Win 1 match <span class="m-reward">+50🪙</span></div>
-      <div class="mission"><span class="m-check">☑</span> Play 3 games <span class="m-reward">+30🪙</span></div>
-      <div class="mission"><span class="m-check">☐</span> Survive Rugpull <span class="m-reward">+1💎</span></div>
-      <div class="mission"><span class="m-check">☐</span> Reach the Moon <span class="m-reward">+2💎</span></div>
+    <!-- LEFT panel: profile + daily missions -->
+    <div id="left-panel" class="glass-panel">
+      <div class="panel-title">PARTY PASS</div>
+      <div class="profile-stats">
+        <div class="ps-row"><span class="ps-label">Wins</span><span class="ps-val" id="stat-wins">0</span></div>
+        <div class="ps-row"><span class="ps-label">Matches</span><span class="ps-val" id="stat-matches">0</span></div>
+        <div class="ps-row"><span class="ps-label">Best Streak</span><span class="ps-val" id="stat-streak">0</span></div>
+      </div>
+      <div class="panel-title" style="margin-top:14px;">DAILY MISSIONS</div>
+      <div class="mission-list">
+        <div class="mission"><div class="m-check done"></div><div class="m-body"><div class="m-name">Win 1 match</div><div class="m-bar"><i style="width:100%"></i></div></div><div class="m-reward">+50</div></div>
+        <div class="mission"><div class="m-check"></div><div class="m-body"><div class="m-name">Play 3 games</div><div class="m-bar"><i style="width:66%"></i></div></div><div class="m-reward">+30</div></div>
+        <div class="mission"><div class="m-check"></div><div class="m-body"><div class="m-name">Survive Rugpull</div><div class="m-bar"><i style="width:0%"></i></div></div><div class="m-reward">+1</div></div>
+      </div>
     </div>
-    <div id="map-rail" class="glass-panel">
+
+    <!-- CENTER: character preview (canvas behind) + big PLAY + skin name -->
+    <div id="menu-stage">
+      <div id="skin-tag" class="glass-pill"><span class="st-dot"></span><span id="skin-name">THE SHILLER</span></div>
+      <div id="play-stack">
+        <button id="btn-play" class="nav-btn primary mega">PLAY</button>
+        <div id="play-sub">Tap to find a match · 32 players</div>
+      </div>
+    </div>
+
+    <!-- RIGHT panel: map rotation + online count -->
+    <div id="right-panel" class="glass-panel">
       <div class="panel-title">MAP ROTATION</div>
-      <div class="map-chip" data-bg="bonding"><span>📈</span> Bonding Curve Climb</div>
-      <div class="map-chip" data-bg="rugpull"><span>🕳️</span> Rugpull Roulette</div>
-      <div class="map-chip" data-bg="moon"><span>🌙</span> Moon Mission</div>
-      <div class="map-chip" data-bg="liquidation"><span>💀</span> Liquidation Lane</div>
+      <div id="map-rail-list">
+        <div class="map-card" data-bg="bonding"><div class="mc-ico bond"></div><div class="mc-info"><div class="mc-name">Bonding Curve Climb</div><div class="mc-type">RACE</div></div></div>
+        <div class="map-card" data-bg="rugpull"><div class="mc-ico rug"></div><div class="mc-info"><div class="mc-name">Rugpull Roulette</div><div class="mc-type">SURVIVAL</div></div></div>
+        <div class="map-card" data-bg="moon"><div class="mc-ico moon"></div><div class="mc-info"><div class="mc-name">Moon Mission</div><div class="mc-type">RACE</div></div></div>
+        <div class="map-card" data-bg="liquidation"><div class="mc-ico liq"></div><div class="mc-info"><div class="mc-name">Liquidation Lane</div><div class="mc-type">RACE</div></div></div>
+      </div>
+      <div class="online-pill"><span class="on-dot"></span><span id="online-count">0</span> ONLINE</div>
     </div>
   </div>
+
   <div id="bottom-nav">
-    <button id="btn-customize" class="nav-btn secondary">🎨 LOCKER</button>
-    <button id="btn-play" class="nav-btn primary">▶ PLAY</button>
-    <button id="btn-rooms" class="nav-btn secondary">🏠 ROOMS</button>
+    <button id="btn-customize" class="nav-btn secondary"><span class="bn-ico locker"></span><span>LOCKER</span></button>
+    <button id="btn-rooms" class="nav-btn secondary"><span class="bn-ico rooms"></span><span>ROOMS</span></button>
   </div>
 </div>
 
 <!-- ROOMS -->
 <div id="rooms-screen" class="screen hidden">
   <div class="cust-header">
-    <button id="rooms-back" class="nav-btn secondary small">← BACK</button>
+    <button id="rooms-back" class="nav-btn secondary small">BACK</button>
     <div class="panel-title big">ROOMS</div>
-    <div style="width:120px"></div>
+    <button id="room-refresh" class="icon-btn small-icon" aria-label="Refresh"></button>
   </div>
   <div id="rooms-body">
     <div id="create-room-panel" class="glass-panel">
@@ -147,7 +168,7 @@
       <button id="room-create-btn" class="nav-btn primary">CREATE ROOM</button>
     </div>
     <div id="room-list-panel" class="glass-panel">
-      <div class="panel-title">ACTIVE ROOMS <button id="room-refresh" class="icon-btn small-icon">⟳</button></div>
+      <div class="panel-title">ACTIVE ROOMS</div>
       <div id="room-list"></div>
     </div>
   </div>
@@ -156,7 +177,7 @@
 <!-- ROOM WAITING -->
 <div id="room-waiting" class="screen hidden">
   <div id="rw-header">
-    <button id="rw-leave" class="nav-btn secondary small">← LEAVE</button>
+    <button id="rw-leave" class="nav-btn secondary small">LEAVE</button>
     <div id="rw-title" class="panel-title big">ROOM</div>
     <div id="rw-host-badge" class="hud-pill subtle">HOST</div>
   </div>
@@ -176,7 +197,7 @@
 <!-- WINNER -->
 <div id="winner-screen" class="screen hidden">
   <div id="winner-card" class="glass-panel">
-    <div id="winner-crown">👑</div>
+    <div id="winner-crown"></div>
     <div id="winner-title">PUMP KING</div>
     <div id="winner-name"></div>
     <div id="winner-sol"></div>
@@ -191,19 +212,19 @@
 <!-- HISTORY -->
 <div id="history-screen" class="screen hidden">
   <div class="cust-header">
-    <button id="history-back" class="nav-btn secondary small">← BACK</button>
+    <button id="history-back" class="nav-btn secondary small">BACK</button>
     <div class="panel-title big">GAME HISTORY</div>
     <div style="width:120px"></div>
   </div>
   <div id="history-list" class="glass-panel"></div>
 </div>
 
-<!-- CUSTOMIZE -->
+<!-- CUSTOMIZE / LOCKER -->
 <div id="customize" class="screen hidden">
   <div class="cust-header">
-    <button id="cust-back" class="nav-btn secondary small">← BACK</button>
+    <button id="cust-back" class="nav-btn secondary small">BACK</button>
     <div class="panel-title big">LOCKER</div>
-    <div style="width:120px"></div>
+    <div id="cust-selected-info"><span id="cust-selected-name">THE SHILLER</span> · <span id="cust-rarity" class="rarity common">COMMON</span></div>
   </div>
   <div class="cust-tabs">
     <button class="tab active" data-tab="skins">SKINS</button>
@@ -212,8 +233,7 @@
   </div>
   <div id="cust-grid" class="cust-grid"></div>
   <div class="cust-footer">
-    <div id="cust-selected-name" class="selected-name">THE SHILLER</div>
-    <div id="cust-rarity" class="rarity common">COMMON</div>
+    <div class="cf-hint">Tap a card to equip. Locked items cost coins.</div>
   </div>
 </div>
 
@@ -228,7 +248,7 @@
 
 <!-- ROULETTE -->
 <div id="roulette-ui" class="screen hidden">
-  <div class="roulette-title">SELECTING MAP…</div>
+  <div class="roulette-title">SELECTING MAP</div>
   <div id="slot-machine">
     <div class="slot-window">
       <div class="slot-reel" id="reel"></div>
@@ -249,17 +269,17 @@
   </div>
   <div class="hud-tr">
     <div id="round-indicator" class="hud-pill">ROUND <span id="round-num">1</span> / 3</div>
-    <div id="survive-timer" class="hud-pill big hidden">⏱ <span id="timer-val">60</span></div>
+    <div id="survive-timer" class="hud-pill big hidden">TIME <span id="timer-val">60</span></div>
   </div>
-  <div id="objective-badge" class="hidden"><span class="ob-ico">🎯</span><span id="objective-text">Reach the finish</span></div>
-  <div id="race-progress" class="hidden"><div class="rp-fill" id="rp-fill"></div><div class="rp-flag">🏁</div></div>
+  <div id="objective-badge" class="hidden"><span id="objective-text">Reach the finish</span></div>
+  <div id="race-progress" class="hidden"><div class="rp-fill" id="rp-fill"></div><div class="rp-flag"></div></div>
   <canvas id="minimap" width="120" height="120"></canvas>
   <div id="big-countdown" class="hidden">3</div>
   <div id="action-banner" class="hidden"></div>
   <div id="mobile-controls" class="hidden">
     <div id="joystick"><div id="joy-knob"></div></div>
     <div id="action-buttons">
-      <button id="btn-emote" class="action-btn small">😎</button>
+      <button id="btn-emote" class="action-btn small">EMOTE</button>
       <button id="btn-dive" class="action-btn">DIVE</button>
       <button id="btn-jump" class="action-btn big">JUMP</button>
     </div>
@@ -269,7 +289,7 @@
 <!-- RESULT -->
 <div id="result-ui" class="screen hidden">
   <div id="result-card">
-    <h1 id="result-text">QUALIFIED!</h1>
+    <h1 id="result-text">QUALIFIED</h1>
     <div id="result-stats"></div>
     <div class="result-btns">
       <button id="result-continue" class="nav-btn primary">CONTINUE</button>
@@ -284,7 +304,7 @@
     <div class="panel-title">SETTINGS</div>
     <div class="setting-row"><span>Sound</span><button id="mute-toggle" class="toggle on">ON</button></div>
     <div class="setting-row"><span>Quality</span><button id="quality-toggle" class="toggle on">HIGH</button></div>
-    <button id="btn-history" class="nav-btn secondary small">📜 GAME HISTORY</button>
+    <button id="btn-history" class="nav-btn secondary small">GAME HISTORY</button>
     <button id="logout-btn" class="nav-btn secondary small">LOG OUT</button>
     <button id="settings-close" class="nav-btn primary small">DONE</button>
   </div>
@@ -292,9 +312,9 @@
 
 <!-- ROTATE PROMPT -->
 <div id="rotate-prompt" class="hidden">
-  <div class="rp-icon">📱</div>
-  <div class="rp-text">Rotate your device to landscape</div>
-  <div class="rp-sub">Stumble Pump plays best in landscape 🔄</div>
+  <div id="rp-icon"></div>
+  <div class="rp-text">Rotate your device</div>
+  <div class="rp-sub">Stumble Pump plays best in landscape</div>
 </div>
 
 <script type="module" src="/src/main.js"></script>

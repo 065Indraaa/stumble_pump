@@ -56,15 +56,24 @@ export const ARENA_BG = {
 };
 export const LOGO_URL = '/textures/logo.jpeg';
 
-// --- Color palette (design system tokens shared with CSS) ---
+// --- Color palette (design system tokens shared with CSS).
+//     pump.fun identity: dark navy + mint/lime green primary. ---
 export const COLORS = {
-  orange: 0xFF6B35, orangeDk: 0xE0531C,
-  blue: 0x3B82F6, sky: 0x5BC0F8,
-  green: 0x22C55E, pink: 0xEC4899,
-  yellow: 0xFBBF24, purple: 0x8B5CF6,
-  red: 0xEF4444, gold: 0xffd700,
+  // pump.fun brand core
+  ink:    0x0B0E1A, ink2: 0x11141F, ink3: 0x1B1D27, ink4: 0x232636,
+  line:   0x2E3142,
+  mint:   0x5FCB88, mintDk: 0x2FAE6A, mint2: 0x54D592,
+  lime:   0xA3E635,
+  teal:   0x629393, tealDk: 0x1D3934,
+  paper:  0xF4F6FB,
+  // degen semantic accents
+  orange: 0xFF8A3D, orangeDk: 0xE0631A,
+  blue:   0x4F8CFF, blueDk: 0x2F66E0, sky: 0x7AB6FF,
+  green:  0x22C55E, pink: 0xFF5CA8,
+  yellow: 0xFFD23F, purple: 0xA77BFF,
+  red:    0xFF5151, redDk: 0xE03636, gold: 0xffd700,
 };
-export const CONFETTI_COLORS = [0xEF4444, 0xFBBF24, 0x22C55E, 0x3B82F6, 0xFF6B35, 0x8B5CF6];
+export const CONFETTI_COLORS = [0x5FCB88, 0xA3E635, 0x54D592, 0xFFD23F, 0xFF8A3D, 0x4F8CFF, 0xFF5CA8, 0xA77BFF];
 
 export function isMobile() {
   return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);

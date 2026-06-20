@@ -4,7 +4,7 @@
 // if physics WASM fails), per-stage logging, defensive error handling
 // so a single bad element never freezes the boot screen.
 // ============================================================
-import { init as initPhysics } from './core/PhysicsWorld.js';
+import { init as initPhysics, isReady as physicsReady } from './core/PhysicsWorld.js';
 import { setFrameCallback, startLoop, setQuality } from './core/Engine.js';
 import { initMobileControls, mobileJumpBtn, mobileDiveBtn, mobileEmoteBtn } from './core/InputManager.js';
 import { isMobile } from './config/constants.js';
@@ -20,7 +20,11 @@ const LOAD_TIPS = [
   'Inflating the bags…', 'Aping in 3… 2… 1…', 'Summoning 32 degens…',
 ];
 
-function log(msg) { console.log('[boot] ' + msg); }
+function log(msg) {
+  console.log('[boot] ' + msg);
+  const dbg = document.getElementById('boot-debug');
+  if (dbg) dbg.textContent = msg;
+}
 
 function checkOrientation() {
   if (!MOBILE) return;
@@ -131,12 +135,19 @@ function boot() {
   Promise.all([physicsPromise, minDisplay])
     .then(() => {
       loader.finish();
+      log('hiding loading screen…');
+      if (!physicsReady()) {
+        // physics failed to init — Actor bodies will be null but game can still
+        // show menu screens (which only need rendering, not simulation).
+        console.warn('[boot] physics NOT ready — entering screens in degraded mode');
+      }
       hideLoadingScreen(() => {
         const prof = Auth.session();
         if (prof) {
-          try { applyProfile(prof); enterMenu(); }
+          try { log('entering menu…'); applyProfile(prof); enterMenu(); }
           catch (e) { console.error('[boot] enterMenu failed', e); showFatal('Menu error: ' + (e?.message || e)); }
         } else {
+          log('showing auth…');
           showAuth();
         }
         log('boot complete');

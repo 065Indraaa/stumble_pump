@@ -85,7 +85,7 @@ export function spawnSpeedLines(pos, facing) {
     FX.spark.spawn(
       new THREE.Vector3(pos.x + facing.x, pos.y + 0.5 + Math.random(), pos.z + facing.z),
       facing.clone().multiplyScalar(6),
-      0.3, 0.6, 0xFBBF24
+      0.3, 0.6, 0x5FCB88
     );
   }
 }

@@ -11,7 +11,7 @@ export function makePendulum(z, baseY, x, amp, sp) {
   piv.position.set(x, baseY, z);
   const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 6, 6), lambertMat(0x78350F));
   rope.position.y = -3; piv.add(rope);
-  const ball = new THREE.Mesh(new THREE.SphereGeometry(1.1, 16, 16), lambertMat(0x8B5CF6));
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(1.1, 16, 16), lambertMat(0xA77BFF));
   ball.position.y = -6; piv.add(ball);
   return { piv, ball, z, x, baseY, amp, sp, ph: Math.random() * 6 };
 }

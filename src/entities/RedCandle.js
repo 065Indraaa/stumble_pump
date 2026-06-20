@@ -10,11 +10,11 @@ import { lambertMat } from '../core/AssetFactory.js';
 
 export function makeRedCandle(x, y, z) {
   const grp = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.BoxGeometry(1.9, 6, 1.9), lambertMat(0xEF4444));
+  const body = new THREE.Mesh(new THREE.BoxGeometry(1.9, 6, 1.9), lambertMat(0xFF5151));
   body.castShadow = true; grp.add(body);
-  const wick = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 2, 8), lambertMat(0xDC2626));
+  const wick = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 2, 8), lambertMat(0xE03636));
   wick.position.y = 4; grp.add(wick);
-  const flame = new THREE.Mesh(new THREE.ConeGeometry(0.25, 0.7, 8), lambertMat(0xFBBF24));
+  const flame = new THREE.Mesh(new THREE.ConeGeometry(0.25, 0.7, 8), lambertMat(0xFFD23F));
   flame.position.y = 5.2; grp.add(flame);
   grp.position.set(x, y, z);
   return { grp, x, z, vz: -(6 + Math.random() * 5), roll: 0 };

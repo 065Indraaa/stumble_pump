@@ -4,7 +4,7 @@
 // Exposes a singleton `Input` with consumed flags for one-shot intents.
 // ============================================================
 import * as THREE from 'three';
-import { MOBILE } from './Engine.js';
+import { MOBILE, canvas } from './Engine.js';
 
 export const Input = {
   keys: {},
@@ -50,8 +50,9 @@ export function applyTouchCamera(dx, dy) {
 /** Read keyboard into Input.move (desktop). Returns the move vector. */
 export function readKeyboardMove() {
   let x = 0, y = 0;
-  if (Input.keys['KeyW'] || Input.keys['ArrowUp']) y += 1;
-  if (Input.keys['KeyS'] || Input.keys['ArrowDown']) y -= 1;
+  // Note: Three.js -Z is forward. We map W (forward) to y=-1.
+  if (Input.keys['KeyW'] || Input.keys['ArrowUp']) y -= 1;
+  if (Input.keys['KeyS'] || Input.keys['ArrowDown']) y += 1;
   if (Input.keys['KeyA'] || Input.keys['ArrowLeft']) x -= 1;
   if (Input.keys['KeyD'] || Input.keys['ArrowRight']) x += 1;
   if (!MOBILE) {
@@ -92,8 +93,8 @@ export function initMobileControls() {
         if (d > JOY_R) { dx = dx / d * JOY_R; dy = dy / d * JOY_R; }
         if (knobEl) knobEl.style.transform = `translate(${dx}px, ${dy}px)`;
         Input.joy.dx = dx / JOY_R; Input.joy.dy = dy / JOY_R;
-        // forward = -dy (up on screen = forward)
-        Input.move.set(Input.joy.dx, -Input.joy.dy);
+        // forward = dy (up on screen = negative dy = forward in world)
+        Input.move.set(Input.joy.dx, Input.joy.dy);
         if (Input.move.lengthSq() > 1) Input.move.normalize();
         break;
       }

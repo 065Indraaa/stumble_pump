@@ -30,26 +30,27 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(CAM_FOV, window.innerWidth / window.innerHeight, 0.1, 800);
 camera.position.set(0, 6, 12);
 
-// ---- Lights: bright cheerful outdoor 3-point rig ----
-const sun = new THREE.DirectionalLight(0xffffff, 1.7);
-sun.position.set(24, 36, 18);
+// ---- Lights: Bright, cheerful sunny day rig (Party Royale style) ----
+// World reads bright and colorful, no dark navy tints.
+const sun = new THREE.DirectionalLight(0xFFF4E0, 2.5);
+sun.position.set(24, 40, 18);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
 sun.shadow.camera.near = 1; sun.shadow.camera.far = 180;
 sun.shadow.camera.left = -75; sun.shadow.camera.right = 75;
 sun.shadow.camera.top = 75; sun.shadow.camera.bottom = -75;
-sun.shadow.bias = -0.0004;
+sun.shadow.bias = -0.0002;
 sun.shadow.normalBias = 0.02;
 scene.add(sun); scene.add(sun.target);
 
-const ambient = new THREE.AmbientLight(0xB0D8F0, 0.9);
+const ambient = new THREE.AmbientLight(0x88AAFF, 1.2);
 scene.add(ambient);
 
-const hemi = new THREE.HemisphereLight(0x87CEEB, 0x8FD4A0, 0.85);
+const hemi = new THREE.HemisphereLight(0xFFFFFF, 0x4466AA, 1.0);
 scene.add(hemi);
 
-// rim light from behind for character separation
-const rim = new THREE.DirectionalLight(0xffe8c4, 0.5);
+// rim light for character separation
+const rim = new THREE.DirectionalLight(0xFFEECC, 0.8);
 rim.position.set(-18, 14, -22);
 scene.add(rim);
 
@@ -104,8 +105,14 @@ function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(0.05, clock.getDelta());
   const t = clock.elapsedTime;
-  physicsStep(dt);
-  if (frameCallback) frameCallback(dt, t);
+  try { physicsStep(dt); } catch (e) { console.error('[physics] step error', e); }
+  if (frameCallback) {
+    try { frameCallback(dt, t); }
+    catch (e) {
+      // A throwing frame callback must NOT kill the render loop.
+      console.error('[frame] callback error (suppressed to keep loop alive)', e);
+    }
+  }
   renderFrame();
 }
 

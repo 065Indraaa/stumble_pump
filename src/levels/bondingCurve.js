@@ -10,8 +10,8 @@ export function buildBondingCurve() {
   return buildRaceCourse({
     name: 'BONDING CURVE CLIMB',
     L, W, H,
-    clear: 0x7DD3F0, fog: 0xA8E6F5,
-    terrainColor: 0x4A90D9, edgeColor: 0xFF6B35, gridColor: 0x88CCEE,
+    clear: 0x87CEFA, fog: 0xE0F6FF,
+    terrainColor: 0x5FCB88, edgeColor: 0xFFD23F, gridColor: 0xFFFFFF,
     backdrop: 'bonding',
     heightFn: (z) => {
       const u = z / L;
@@ -28,7 +28,7 @@ export function buildBondingCurve() {
       { z: L * 0.80, x: -2, amp: 1.1, sp: 2.2 },
     ],
     pits: [{ z0: L * 0.50, z1: L * 0.56 }],
-    movers: [{ z: L * 0.53, x0: -8, x1: 8, w: 4, d: 5, sp: 0.9, color: 0x3B82F6 }],
-    finishText: 'TO THE MOON 🚀', killY: -40,
+    movers: [{ z: L * 0.53, x0: -8, x1: 8, w: 4, d: 5, sp: 0.9, color: 0x4F8CFF }],
+    finishText: 'TO THE MOON', killY: -40,
   });
 }

@@ -72,6 +72,15 @@ export class CharacterRig {
     this._buildArms(chest, limbMat);
     this._buildLegs(hips, limbMat);
 
+    // Default Party Game Backpack (adds detail so they aren't plain capsules)
+    const packGeo = new THREE.BoxGeometry(0.3, 0.4, 0.15);
+    const packMat = s.metal ? metalMat(s.accent, 0.8, 0.3) : toonMat(s.accent);
+    const backpack = this._part(packGeo, packMat, chest, 0, 0.05, -0.25, true);
+    // little pocket on the backpack
+    const pocketGeo = new THREE.BoxGeometry(0.2, 0.2, 0.05);
+    const pocketMat = toonMat(s.body);
+    this._part(pocketGeo, pocketMat, backpack, 0, -0.05, -0.08, true);
+
     // per-skin accessories + flags
     this._applySkin(s);
   }
@@ -142,79 +151,230 @@ export class CharacterRig {
     else if (this.skinKey === 'orange') this._orangieExtras(s);    // Orangie
     else if (this.skinKey === 'cigarchad') this._cigarchadExtras(s);
     else if (this.skinKey === 'cupsey') this._cupseyExtras(s);
+    else if (this.skinKey === 'percent') this._percentExtras(s);   // Cented
+    else if (this.skinKey === 'frogdegen') this._frogExtras(s);    // mr.frog
+    else if (this.skinKey === 'diamond') this._diamondExtras(s);   // Diamond Hands
     else this._genericExtras(s);
   }
 
   // ---- Ansem (@blknoiz06 / Zion Thomas): young Black trader, boxer build,
-  //      signature baseball cap. Skin tone warm brown. ----
+  //      signature fitted baseball cap (often backwards), iced-out chain,
+  //      diamond stud earrings. Skin tone warm brown. ----
   _ansemExtras(s) {
     this.bones.headMesh.material = toonMat(0x8d5524);
     this.bones.headMesh.material.needsUpdate = true;
-    const capBase = new THREE.Mesh(new THREE.SphereGeometry(0.44, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.55), toonMat(0x1b4fd8));
+    // fitted cap crown (navy with mint visor stitch)
+    const capBase = new THREE.Mesh(new THREE.SphereGeometry(0.44, 20, 14, 0, Math.PI * 2, 0, Math.PI * 0.55), toonMat(0x1B1D27));
     capBase.position.y = 0.08; this.bones.head.add(capBase);
-    const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 0.08, 16, 1, false, 0, Math.PI), toonMat(0x1b4fd8));
+    // cap button on top
+    const capBtn = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 8), toonMat(0x2E3142));
+    capBtn.position.set(0, 0.32, 0); this.bones.head.add(capBtn);
+    // curved brim
+    const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 0.08, 20, 1, false, 0, Math.PI), toonMat(0x1B1D27));
     brim.rotation.x = -Math.PI / 2; brim.position.set(0, 0.08, 0.34); this.bones.head.add(brim);
-    const chain = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.025, 8, 20), metalMat(0xffd700, 0.9, 0.2));
-    chain.rotation.x = Math.PI / 2; chain.position.set(0, 0.18, 0.2); this.bones.chest.add(chain);
-    const badge = this._part(new THREE.CircleGeometry(0.1, 16), basicMat(0x35d6ff), this.bones.chest, 0, 0.05, 0.24);
-    this.skinExtras.push(capBase, brim, chain, badge);
+    // mint logo dot on cap front
+    const capLogo = new THREE.Mesh(new THREE.CircleGeometry(0.06, 16), basicMat(0x5FCB88));
+    capLogo.position.set(0, 0.18, 0.30); this.bones.head.add(capLogo);
+    // iced-out Cuban link chain (multi-link torus + pendant)
+    const chain = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.028, 8, 24), metalMat(0xffd700, 0.95, 0.15));
+    chain.rotation.x = Math.PI / 2; chain.position.set(0, 0.18, 0.20); this.bones.chest.add(chain);
+    // SOL pendant
+    const pendant = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.12, 0.02), metalMat(0xA77BFF, 0.9, 0.2));
+    pendant.position.set(0, 0.02, 0.25); this.bones.chest.add(pendant);
+    // diamond stud earrings (both ears)
+    for (const sx of [-1, 1]) {
+      const stud = new THREE.Mesh(new THREE.OctahedronGeometry(0.04, 0), metalMat(0xffffff, 1.0, 0.05));
+      stud.position.set(sx * 0.40, -0.02, 0.05); this.bones.head.add(stud);
+      this.skinExtras.push(stud);
+    }
+    // Solana gradient chest badge (purple→green)
+    const badge = this._part(new THREE.CircleGeometry(0.1, 24), basicMat(0x9945FF), this.bones.chest, 0, 0.05, 0.24);
+    badge.material.emissive = new THREE.Color(0x14F195); badge.material.emissiveIntensity = 0.4;
+    this.skinExtras.push(capBase, capBtn, brim, capLogo, chain, pendant, badge);
   }
 
-  // ---- Toly (Anatoly Yakovenko): bald shaved head + short beard + glasses. ----
+  // ---- Toly (Anatoly Yakovenko, Solana co-founder): bald shaved head,
+  //      short salt-and-pepper beard, thin rectangular glasses, fair skin. ----
   _tolyExtras(s) {
     this.bones.headMesh.material = metalMat(0xe8c9a0, 0.2, 0.55);
     this.bones.headMesh.material.needsUpdate = true;
-    const beard = new THREE.Mesh(new THREE.SphereGeometry(0.45, 16, 12, 0, Math.PI * 2, Math.PI * 0.55, Math.PI * 0.45), toonMat(0x3a2a1a));
+    // short beard wrap (lower face)
+    const beard = new THREE.Mesh(new THREE.SphereGeometry(0.45, 18, 14, 0, Math.PI * 2, Math.PI * 0.58, Math.PI * 0.42), toonMat(0x4A4036));
     beard.position.y = -0.05; this.bones.head.add(beard);
-    const badge = this._part(new THREE.CircleGeometry(0.12, 24), basicMat(0x9945ff), this.bones.chest, 0, 0.05, 0.24);
-    badge.material.emissive = new THREE.Color(0x14f195); badge.material.emissiveIntensity = 0.4;
+    // mustache
+    const must = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.04, 0.06), toonMat(0x4A4036));
+    must.position.set(0, -0.06, 0.38); this.bones.head.add(must);
+    // thin rectangular glasses (frame + arms)
+    const glassMat = toonMat(0x1A1A2A);
     for (const sx of [-1, 1]) {
-      const lens = this._part(new THREE.BoxGeometry(0.16, 0.1, 0.03), basicMat(0x1a1a2a));
-      lens.position.set(sx * 0.17, 0.05, 0.4); this.bones.head.add(lens); this.skinExtras.push(lens);
+      const lens = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.11, 0.03), glassMat);
+      lens.position.set(sx * 0.17, 0.05, 0.40); this.bones.head.add(lens);
+      // arm
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.015, 0.015), glassMat);
+      arm.position.set(sx * 0.27, 0.05, 0.36); this.bones.head.add(arm);
+      this.skinExtras.push(lens, arm);
     }
-    this.skinExtras.push(beard, badge);
+    // bridge
+    const bridge = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.015, 0.02), glassMat);
+    bridge.position.set(0, 0.05, 0.41); this.bones.head.add(bridge);
+    // Solana gradient logo badge (purple→green) — signature Solana
+    const badge = this._part(new THREE.CircleGeometry(0.12, 24), basicMat(0x9945FF), this.bones.chest, 0, 0.05, 0.24);
+    badge.material.emissive = new THREE.Color(0x14F195); badge.material.emissiveIntensity = 0.4;
+    this.skinExtras.push(beard, must, bridge, badge);
   }
 
-  // ---- Mert (@ummtqt, Helius): hoodie + round glasses + wizard hat. ----
+  // ---- Mert (@ummtqt, Helius CEO): hoodie + beanie + round glasses.
+  //      Dark hair tufts visible under beanie. Helius badge. ----
   _mertExtras(s) {
-    const hoodie = this._part(new THREE.CylinderGeometry(0.26, 0.32, 0.6, 12), toonMat(0x3a2a70), this.bones.chest, 0, -0.02, 0);
-    const hood = this._part(new THREE.SphereGeometry(0.48, 14, 12, 0, Math.PI * 2, 0, Math.PI * 0.6), toonMat(0x3a2a70), this.bones.head, 0, 0.02, -0.05);
+    // hoodie over torso
+    const hoodie = this._part(new THREE.CylinderGeometry(0.26, 0.32, 0.6, 14), toonMat(0x2FAE6A), this.bones.chest, 0, -0.02, 0);
+    // hoodie pocket
+    const pocket = this._part(new THREE.BoxGeometry(0.3, 0.12, 0.02), toonMat(0x1D3934), this.bones.chest, 0, -0.12, 0.24);
+    // hood collar around neck
+    const hood = this._part(new THREE.SphereGeometry(0.48, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.55), toonMat(0x2FAE6A), this.bones.head, 0, 0.02, -0.05);
+    // beanie (folded cuff visible)
+    const beanie = new THREE.Mesh(new THREE.SphereGeometry(0.45, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.5), toonMat(0x1B1D27));
+    beanie.position.y = 0.10; this.bones.head.add(beanie);
+    const cuff = new THREE.Mesh(new THREE.TorusGeometry(0.43, 0.06, 8, 20), toonMat(0x2E3142));
+    cuff.rotation.x = Math.PI / 2; cuff.position.set(0, 0.08, 0); this.bones.head.add(cuff);
+    // dark hair tuft peeking under beanie
+    const hair = new THREE.Mesh(new THREE.SphereGeometry(0.42, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.2), toonMat(0x2A2018));
+    hair.position.set(0, 0.04, -0.08); this.bones.head.add(hair);
+    // round thin glasses
     for (const sx of [-1, 1]) {
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.08, 0.015, 6, 12), metalMat(0xffd24a, 0.8, 0.3));
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.09, 0.014, 8, 16), metalMat(0x11141F, 0.4, 0.5));
       ring.position.set(sx * 0.17, 0.05, 0.41); this.bones.head.add(ring); this.skinExtras.push(ring);
     }
-    const wizHat = this._part(new THREE.ConeGeometry(0.3, 0.5, 12), metalMat(0xffd24a, 0.5, 0.4), this.bones.head, 0, 0.55, 0);
-    wizHat.rotation.x = 0.1;
-    this.skinExtras.push(hoodie, hood, wizHat);
+    // Helius mint badge
+    const badge = this._part(new THREE.CircleGeometry(0.1, 20), basicMat(0xA3E635), this.bones.chest, 0, 0.05, 0.25);
+    this.skinExtras.push(hoodie, pocket, hood, beanie, cuff, hair, badge);
   }
 
   _orangieExtras(s) {
-    this.bones.headMesh.material = toonMat(0xff7a18);
-    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.44, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.55), toonMat(0xff7a18));
-    cap.position.y = 0.08; this.bones.head.add(cap);
-    const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 0.08, 16, 1, false, 0, Math.PI), toonMat(0xff7a18));
-    brim.rotation.x = -Math.PI / 2; brim.position.set(0, 0.08, 0.34); this.bones.head.add(brim);
-    this.skinExtras.push(cap, brim);
+    // bright orange skin (the meme)
+    this.bones.headMesh.material = toonMat(0xFF8A3D);
+    this.bones.headMesh.material.needsUpdate = true;
+    // orange beanie
+    const beanie = new THREE.Mesh(new THREE.SphereGeometry(0.45, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.5), toonMat(0xFF8A3D));
+    beanie.position.y = 0.10; this.bones.head.add(beanie);
+    const cuff = new THREE.Mesh(new THREE.TorusGeometry(0.43, 0.06, 8, 20), toonMat(0xE0631A));
+    cuff.rotation.x = Math.PI / 2; cuff.position.set(0, 0.08, 0); this.bones.head.add(cuff);
+    // BTC-orange pin on chest
+    const pin = this._part(new THREE.CircleGeometry(0.08, 16), basicMat(0xFF8A3D), this.bones.chest, 0, 0.05, 0.24);
+    this.skinExtras.push(beanie, cuff, pin);
   }
 
   _cigarchadExtras(s) {
-    const suit = this._part(new THREE.CylinderGeometry(0.24, 0.3, 0.5, 12), toonMat(0x2a2a33), this.bones.chest, 0, -0.04, 0);
-    const tie = this._part(new THREE.BoxGeometry(0.08, 0.28, 0.03), metalMat(0xffd700), this.bones.chest, 0, 0, 0.22);
-    const cigar = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.25, 8), toonMat(0x4a2a1a));
-    cigar.rotation.z = Math.PI / 2; cigar.position.set(0.12, -0.15, 0.4); this.bones.head.add(cigar);
-    const ember = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 8), basicMat(0xff3300));
-    ember.position.set(0.24, -0.15, 0.4); this.bones.head.add(ember);
-    const chain = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.025, 8, 20), metalMat(0xffd700, 0.9, 0.2));
-    chain.rotation.x = Math.PI / 2; chain.position.set(0, 0.18, 0.2); this.bones.chest.add(chain);
-    this.skinExtras.push(suit, tie, cigar, ember, chain);
+    // sharp dark suit with lapels
+    const suit = this._part(new THREE.CylinderGeometry(0.24, 0.3, 0.5, 14), toonMat(0x1B1D27), this.bones.chest, 0, -0.04, 0);
+    // white shirt collar V
+    const collar = this._part(new THREE.ConeGeometry(0.14, 0.18, 4), basicMat(0xF4F6FB), this.bones.chest, 0, 0.06, 0.22);
+    collar.rotation.y = Math.PI / 4;
+    // gold tie
+    const tie = this._part(new THREE.BoxGeometry(0.07, 0.28, 0.03), metalMat(0xFFD23F, 0.8, 0.25), this.bones.chest, 0, -0.02, 0.23);
+    // lapels (two angled boxes)
+    for (const sx of [-1, 1]) {
+      const lapel = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.18, 0.02), toonMat(0x11141F));
+      lapel.position.set(sx * 0.10, 0.02, 0.23); lapel.rotation.z = sx * 0.4; this.bones.chest.add(lapel); this.skinExtras.push(lapel);
+    }
+    // lit cigar (tan body + white band + glowing ember)
+    const cigar = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.28, 10), toonMat(0x6B3A1A));
+    cigar.rotation.z = Math.PI / 2; cigar.position.set(0.12, -0.15, 0.40); this.bones.head.add(cigar);
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.042, 0.042, 0.05, 10), metalMat(0xFFD23F, 0.9, 0.2));
+    band.rotation.z = Math.PI / 2; band.position.set(0.06, -0.15, 0.40); this.bones.head.add(band);
+    const ember = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8), basicMat(0xFF5151));
+    ember.position.set(0.26, -0.15, 0.40); this.bones.head.add(ember);
+    // gold watch on left wrist
+    const watch = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.03, 12), metalMat(0xFFD23F, 0.95, 0.15));
+    watch.rotation.x = Math.PI / 2; watch.position.set(0, -0.06, 0.06); this.bones.l_lowerarm.add(watch);
+    // gold chain
+    const chain = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.025, 8, 22), metalMat(0xFFD23F, 0.9, 0.2));
+    chain.rotation.x = Math.PI / 2; chain.position.set(0, 0.18, 0.20); this.bones.chest.add(chain);
+    this.skinExtras.push(suit, collar, tie, cigar, band, ember, watch, chain);
   }
 
   _cupseyExtras(s) {
-    const cup = this._part(new THREE.CylinderGeometry(0.3, 0.22, 0.5, 16, 1, true), toonMat(0xe8e8f0), this.bones.chest, 0, -0.02, 0);
+    // paper cup body (white with mint sip lid)
+    const cup = this._part(new THREE.CylinderGeometry(0.3, 0.22, 0.5, 18, 1, true), toonMat(0xF4F6FB), this.bones.chest, 0, -0.02, 0);
     cup.material.side = THREE.DoubleSide;
-    const straw = this._part(new THREE.CylinderGeometry(0.04, 0.04, 0.5, 8), toonMat(0x18c0b0), this.bones.head, 0.1, 0.5, 0);
+    // coffee sleeve (kraft band)
+    const sleeve = this._part(new THREE.CylinderGeometry(0.27, 0.27, 0.14, 18, 1, true), toonMat(0xC97A2A), this.bones.chest, 0, -0.06, 0);
+    sleeve.material.side = THREE.DoubleSide;
+    // mint sip lid
+    const lid = this._part(new THREE.CylinderGeometry(0.31, 0.31, 0.06, 18), toonMat(0x5FCB88), this.bones.chest, 0, 0.22, 0);
+    // straw sticking up
+    const straw = this._part(new THREE.CylinderGeometry(0.04, 0.04, 0.5, 10), toonMat(0xA3E635), this.bones.head, 0.1, 0.5, 0);
     straw.rotation.z = 0.3;
-    this.skinExtras.push(cup, straw);
+    this.skinExtras.push(cup, sleeve, lid, straw);
+  }
+
+  // ---- Cented (percent): chart-percent themed trader, green visor cap,
+  //      "% " chest patch, monocular HUD lens over one eye. ----
+  _percentExtras(s) {
+    // green cap with brim
+    const capBase = new THREE.Mesh(new THREE.SphereGeometry(0.44, 18, 12, 0, Math.PI * 2, 0, Math.PI * 0.55), toonMat(0x2FAE6A));
+    capBase.position.y = 0.08; this.bones.head.add(capBase);
+    const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 0.08, 18, 1, false, 0, Math.PI), toonMat(0x1D3934));
+    brim.rotation.x = -Math.PI / 2; brim.position.set(0, 0.08, 0.34); this.bones.head.add(brim);
+    // % emblem on cap
+    const pct = this._part(new THREE.CircleGeometry(0.07, 16), basicMat(0xFFD23F), this.bones.head, 0, 0.18, 0.30);
+    // monocular HUD over right eye
+    const hud = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.06, 14), metalMat(0x11141F, 0.7, 0.3));
+    hud.rotation.x = Math.PI / 2; hud.position.set(0.17, 0.05, 0.40); this.bones.head.add(hud);
+    const hudLens = new THREE.Mesh(new THREE.CircleGeometry(0.06, 14), basicMat(0xA3E635));
+    hudLens.position.set(0.17, 0.05, 0.435); this.bones.head.add(hudLens);
+    // % chest patch
+    const patch = this._part(new THREE.CircleGeometry(0.1, 18), basicMat(0x2FAE6A), this.bones.chest, 0, 0.05, 0.24);
+    this.skinExtras.push(capBase, brim, pct, hud, hudLens, patch);
+  }
+
+  // ---- mr.frog (frogdegen): green amphibian, bulbous eyes on top of head. ----
+  _frogExtras(s) {
+    this.bones.headMesh.material = toonMat(0x5FCB88);
+    this.bones.headMesh.material.needsUpdate = true;
+    // two bulbous frog eyes on top
+    for (const sx of [-1, 1]) {
+      const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.13, 14, 12), toonMat(0xA3E635));
+      bulb.position.set(sx * 0.15, 0.38, 0.05); this.bones.head.add(bulb);
+      const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 8), basicMat(0x0B0E1A));
+      pupil.position.set(sx * 0.15, 0.40, 0.15); this.bones.head.add(pupil);
+      // hide default eyes
+      this.skinExtras.push(bulb, pupil);
+    }
+    for (const arr of [this.bones.irisL, this.bones.irisR]) arr.forEach((m) => { m.visible = false; });
+    // wide frog grin
+    const grin = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.06, 0.04), basicMat(0x1D3934));
+    grin.position.set(0, -0.16, 0.36); this.bones.head.add(grin);
+    // lily-pad shoulder pads
+    for (const sx of [-1, 1]) {
+      const pad = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.04, 8), toonMat(0x1D3934));
+      pad.position.set(sx * 0.28, 0.16, 0); pad.rotation.z = sx * 0.3; this.bones.chest.add(pad);
+      this.skinExtras.push(pad);
+    }
+    this.skinExtras.push(grin);
+  }
+
+  // ---- Diamond Hands (diamond): crystalline blue body, faceted gem head,
+  //      shimmering facets, diamond-shine eyes. ----
+  _diamondExtras(s) {
+    this.bones.headMesh.material = metalMat(0xB3E5FC, 0.85, 0.1);
+    this.bones.headMesh.material.needsUpdate = true;
+    // gem facets on head (octahedron crown)
+    const gemCrown = new THREE.Mesh(new THREE.OctahedronGeometry(0.28, 0), metalMat(0x4F8CFF, 0.9, 0.08));
+    gemCrown.position.set(0, 0.42, 0); gemCrown.rotation.y = Math.PI / 4; this.bones.head.add(gemCrown);
+    // sparkle eyes (cyan diamonds)
+    for (const arr of [this.bones.irisL, this.bones.irisR]) {
+      arr.forEach((m) => { m.material = basicMat(0xA3E635); m.scale.multiplyScalar(1.2); });
+    }
+    // crystalline shoulder gems
+    for (const sx of [-1, 1]) {
+      const shard = new THREE.Mesh(new THREE.OctahedronGeometry(0.1, 0), metalMat(0xA3E635, 0.95, 0.05));
+      shard.position.set(sx * 0.30, 0.14, 0); shard.rotation.y = Math.PI / 4; this.bones.chest.add(shard);
+      this.skinExtras.push(shard);
+    }
+    // 💎 badge on chest
+    const badge = this._part(new THREE.CircleGeometry(0.1, 16), basicMat(0x4F8CFF), this.bones.chest, 0, 0.05, 0.24);
+    this.skinExtras.push(gemCrown, badge);
   }
 
 
@@ -275,8 +435,16 @@ export class CharacterRig {
   }
 
   _genericExtras(s) {
-    // accent stripe + emoji badge on chest for unlockable KOL skins
+    // accent stripe + emoji badge on chest
     const badge = this._part(new THREE.CircleGeometry(0.1, 16), basicMat(s.accent), this.bones.chest, 0, 0.05, 0.24);
+    // Add a basic sweatband to all generic characters so they aren't plain
+    const bandGeo = new THREE.CylinderGeometry(0.43, 0.43, 0.08, 18, 1, false);
+    const bandMat = toonMat(s.accent);
+    const band = new THREE.Mesh(bandGeo, bandMat);
+    band.position.y = 0.22;
+    this.bones.head.add(band);
+    this.skinExtras.push(band);
+
     // hat cone for legendary
     if (s.rarity === 'legendary') {
       const hat = this._part(new THREE.ConeGeometry(0.22, 0.3, 12), metalMat(s.accent, 0.6, 0.3), this.bones.head, 0, 0.5, 0);
