@@ -111,14 +111,12 @@
       </div>
     </div>
 
-    <!-- CENTER: character preview (canvas behind) + big PLAY + skin name -->
+    <!-- CENTER: character preview (canvas behind) + skin name + big PLAY.
+         The 3D character is projected to the middle of the viewport by the
+         menu camera, so we keep this column minimal — skin-tag on top, PLAY
+         at the bottom — leaving the middle free for the character. -->
     <div id="menu-stage">
       <div id="skin-tag" class="glass-pill"><span class="st-dot"></span><span id="skin-name">THE SHILLER</span></div>
-      <div id="stage-vs">
-        <div class="vs-side"><div class="vs-num">31</div><div class="vs-lbl">RIVALS</div></div>
-        <div class="vs-mid">VS</div>
-        <div class="vs-side"><div class="vs-num">1</div><div class="vs-lbl">CHAMPION</div></div>
-      </div>
       <div id="play-stack">
         <button id="btn-play" class="nav-btn primary mega">PLAY</button>
         <div id="play-sub">Tap to find a match · 32 players</div>
