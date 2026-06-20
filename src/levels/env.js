@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { scene, renderer } from '../core/Engine.js';
 import { lambertMat, basicMat, toonMat, metalMat } from '../core/AssetFactory.js';
+import { SP_PALETTE } from '../config/constants.js';
 
 /** Remove every scene child except the lights owned by Engine. */
 export function clearScene() {
@@ -49,7 +50,7 @@ export function makeMoons() {
 }
 
 export function makeOrbs(count = 50, range = 40, yBase = 2) {
-  const palette = [0x5FCB88, 0xA3E635, 0x54D592, 0xFFD23F, 0xFF8A3D, 0x4F8CFF, 0xFF5CA8];
+  const palette = [SP_PALETTE.floor1, SP_PALETTE.floor2, SP_PALETTE.edge, SP_PALETTE.terrain, SP_PALETTE.cloud];
   const g = new THREE.Group();
   const orbs = [];
   for (let i = 0; i < count; i++) {
@@ -376,7 +377,7 @@ export function makeFloatingIslands(count = 8, radius = 180) {
   return group;
 }
 
-export function make3DTileFloor(w, l, tileSize, heightFn, color1 = 0x4A90E2, color2 = 0xFFD23F) {
+export function make3DTileFloor(w, l, tileSize, heightFn, color1 = 0x4A90E2, color2 = 0xFFD23F, pits = []) {
   const widthTiles = Math.ceil((w * 2) / tileSize);
   const lengthTiles = Math.ceil(l / tileSize);
   
@@ -404,6 +405,17 @@ export function make3DTileFloor(w, l, tileSize, heightFn, color1 = 0x4A90E2, col
     for (let x = 0; x < widthTiles; x++) {
       const worldZ = z * tileSize;
       const worldX = x * tileSize - wOffset + (tileSize/2);
+      
+      // Check if this tile falls inside any pit
+      let inPit = false;
+      for (const p of pits) {
+        if (worldZ > p.z0 - tileSize * 0.5 && worldZ < p.z1 + tileSize * 0.5) {
+          inPit = true;
+          break;
+        }
+      }
+      if (inPit) continue;
+
       // Floor Y is exactly at heightFn, block center is offset by half its height
       const worldY = heightFn(worldZ) - (tileSize * 0.4); 
       

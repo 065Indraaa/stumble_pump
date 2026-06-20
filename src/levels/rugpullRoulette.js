@@ -10,49 +10,50 @@ import { lambertMat, basicMat } from '../core/AssetFactory.js';
 import { clearScene, setSynthwaveBackground, makeGridFloor, makeMoons, makeOrbs, makeBuilding, make3DClouds, makeFloatingIslands } from './env.js';
 import { makeHexPlatform, warnPlatform, updateHexPlatform } from '../entities/HexPlatform.js';
 import { SFX } from '../core/AudioManager.js';
+import { SP_PALETTE } from '../config/constants.js';
 
 export function buildRugpull() {
-  clearScene(); setSynthwaveBackground(0x0A0A18, 0x1A1230);
-  scene.fog = new THREE.Fog(0x1A1230, 50, 150);
-  renderer.setClearColor(0x0A0A18);
+  clearScene(); 
+  renderer.setClearColor(SP_PALETTE.sky);
+  scene.fog = new THREE.Fog(SP_PALETTE.fog, 50, 150);
   const group = new THREE.Group(); scene.add(group);
   group.add(make3DClouds(20, 140, 40));
   group.add(makeFloatingIslands(8, 120));
-  group.add(makeGridFloor(320, -22, 0x2FAE6A));
+  group.add(makeGridFloor(320, -22, SP_PALETTE.grass));
   group.add(makeMoons());
   const orbs = makeOrbs(30, 50, 6); group.add(orbs);
 
-  // void floor — deep navy with subtle violet
-  const voidFloor = new THREE.Mesh(new THREE.PlaneGeometry(240, 240), lambertMat(0x11141F));
+  // void floor
+  const voidFloor = new THREE.Mesh(new THREE.PlaneGeometry(240, 240), lambertMat(SP_PALETTE.wall));
   voidFloor.rotation.x = -Math.PI / 2; voidFloor.position.y = -20; group.add(voidFloor);
 
-  // arena ring — mint torus
-  const arenaRing = new THREE.Mesh(new THREE.TorusGeometry(28, 0.4, 12, 64), lambertMat(0x5FCB88));
+  // arena ring
+  const arenaRing = new THREE.Mesh(new THREE.TorusGeometry(28, 0.4, 12, 64), lambertMat(SP_PALETTE.terrain));
   arenaRing.rotation.x = -Math.PI / 2; arenaRing.position.y = -0.5; group.add(arenaRing);
   for (let i = 0; i < 12; i++) {
     const a = i / 12 * Math.PI * 2;
-    const wall = new THREE.Mesh(new THREE.BoxGeometry(2, 3, 1), lambertMat(0x1B1D27));
+    const wall = new THREE.Mesh(new THREE.BoxGeometry(2, 3, 1), lambertMat(SP_PALETTE.wall));
     wall.position.set(Math.cos(a) * 28, 1, Math.sin(a) * 28);
     wall.rotation.y = -a + Math.PI / 2; wall.castShadow = true; group.add(wall);
-    // mint accent cap on each wall
-    const cap = new THREE.Mesh(new THREE.BoxGeometry(2.05, 0.3, 1.05), lambertMat(0xA77BFF));
+    // accent cap
+    const cap = new THREE.Mesh(new THREE.BoxGeometry(2.05, 0.3, 1.05), lambertMat(SP_PALETTE.edge));
     cap.position.set(Math.cos(a) * 28, 2.5, Math.sin(a) * 28);
     cap.rotation.y = -a + Math.PI / 2; group.add(cap);
   }
-  // buildings around arena — pump.fun palette
-  const bPalette = [0xFFD23F, 0x5FCB88, 0x4F8CFF, 0xFF5CA8, 0xFF8A3D, 0xA77BFF];
+  // buildings around arena — pastel palette
+  const bPalette = [SP_PALETTE.floor1, SP_PALETTE.edge, SP_PALETTE.terrain, SP_PALETTE.floor2, SP_PALETTE.wall];
   for (let i = 0; i < 8; i++) {
     const a = i / 8 * Math.PI * 2;
     const bx = Math.cos(a) * 42, bz = Math.sin(a) * 42;
     const bh = 7 + (i % 3) * 4;
-    const b = makeBuilding({ w: 5, d: 5, h: bh, color: bPalette[i % 6], roofColor: bPalette[(i + 2) % 6], roofType: ['cone', 'pyramid', 'dome', 'flat'][i % 4], winColor: 0xFFD23F });
+    const b = makeBuilding({ w: 5, d: 5, h: bh, color: bPalette[i % 5], roofColor: bPalette[(i + 2) % 5], roofType: ['cone', 'pyramid', 'dome', 'flat'][i % 4], winColor: SP_PALETTE.edge });
     b.position.set(bx, 0, bz); b.rotation.y = -a; group.add(b);
   }
 
-  // 7x7 platform grid — pump.fun platform colors
+  // 7x7 platform grid — pastel platform colors
   const plats = [];
   const N = 7, gap = 6.5;
-  const platColors = [0xFFD23F, 0x5FCB88, 0x4F8CFF, 0xFF5CA8, 0xFF8A3D, 0xA77BFF];
+  const platColors = [SP_PALETTE.floor1, SP_PALETTE.floor2, SP_PALETTE.terrain, SP_PALETTE.edge];
   for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
     const x = (i - (N - 1) / 2) * gap, z = (j - (N - 1) / 2) * gap;
     const col = platColors[(i + j) % platColors.length];
@@ -65,8 +66,8 @@ export function buildRugpull() {
   for (let i = 0; i < 8; i++) {
     const p = plats[Math.floor(Math.random() * plats.length)];
     if (p.state !== 'idle') continue;
-    const coin = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.08, 16), lambertMat(0xFFD23F));
-    coin.material.emissive = new THREE.Color(0xFFB820); coin.material.emissiveIntensity = 0.5;
+    const coin = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.08, 16), lambertMat(SP_PALETTE.edge));
+    coin.material.emissive = new THREE.Color(SP_PALETTE.edge); coin.material.emissiveIntensity = 0.5;
     coin.position.set(p.x, 1.5, p.z); coin.rotation.x = Math.PI / 2; group.add(coin);
     coins.push({ mesh: coin, px: p.x, pz: p.z, collected: false, spin: 0 });
   }

@@ -36,9 +36,10 @@ export class AnimationController {
 
   _lerpRot(bone, x, y, z, k = 0.25) {
     if (!bone) return;
-    bone.rotation.x += (x - bone.rotation.x) * k;
-    bone.rotation.y += (y - bone.rotation.y) * k;
-    bone.rotation.z += (z - bone.rotation.z) * k;
+    const factor = 1 - Math.exp(-(k * 60) * (this.lastDt || 0.016));
+    bone.rotation.x += (x - bone.rotation.x) * factor;
+    bone.rotation.y += (y - bone.rotation.y) * factor;
+    bone.rotation.z += (z - bone.rotation.z) * factor;
   }
 
   _resetPose(k = 0.2) {
@@ -51,6 +52,7 @@ export class AnimationController {
 
   update(dt, t) {
     this.t += dt;
+    this.lastDt = dt;
     const b = this.b;
     switch (this.state) {
       case 'idle':      this._idle(t, dt); break;

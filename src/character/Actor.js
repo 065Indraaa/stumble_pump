@@ -225,8 +225,11 @@ export class Actor {
     // map-specific obstacle interactions (candles/sweepers/pendulums/finish)
     ctx.checkActor?.(this);
 
-    // facing smoothing
-    this.root.rotation.y += (-this.facing - this.root.rotation.y) * 0.2;
+    // facing smoothing (frame-rate independent & handles wrapping)
+    let fDelta = -this.facing - this.root.rotation.y;
+    while (fDelta > Math.PI) fDelta -= Math.PI * 2;
+    while (fDelta < -Math.PI) fDelta += Math.PI * 2;
+    this.root.rotation.y += fDelta * (1 - Math.exp(-20 * dt));
     if (!this.ragdoll) { this.root.rotation.x = 0; this.root.rotation.z = 0; }
 
     // animation state selection

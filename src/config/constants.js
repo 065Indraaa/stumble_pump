@@ -73,6 +73,22 @@ export const COLORS = {
   yellow: 0xFFD23F, purple: 0xA77BFF,
   red:    0xFF5151, redDk: 0xE03636, gold: 0xffd700,
 };
+
+// Global unified Stumble Pump AAA palette for all arenas (No neon, pastel/soft)
+export const SP_PALETTE = {
+  sky: 0x87CEFA,      // Soft light sky blue
+  fog: 0xE0F6FF,      // Very pale blue
+  floor1: 0x4A90E2,   // Soft matte blue
+  floor2: 0xFFD23F,   // Warm pastel yellow/gold
+  edge: 0xFF8A3D,     // Soft orange
+  terrain: 0x5FCB88,  // Soft mint green
+  wall: 0x1B1D27,     // Deep navy (dark, not neon)
+  lava: 0xE03636,     // Matte red
+  cloud: 0xFFFFFF,
+  grass: 0x5FCB88,
+  dirt: 0x8B5A2B
+};
+
 export const CONFETTI_COLORS = [0x5FCB88, 0xA3E635, 0x54D592, 0xFFD23F, 0xFF8A3D, 0x4F8CFF, 0xFF5CA8, 0xA77BFF];
 
 export function isMobile() {

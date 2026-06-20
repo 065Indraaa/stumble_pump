@@ -23,11 +23,12 @@ import { makePendulum, updatePendulum } from '../entities/Pendulum.js';
 import { makeMover, updateMover } from '../entities/MoverPlatform.js';
 import { SFX } from '../core/AudioManager.js';
 import { shakeCamera } from '../core/Engine.js';
+import { SP_PALETTE } from '../config/constants.js';
 
 export function buildRaceCourse(cfg) {
   clearScene();
-  renderer.setClearColor(cfg.clear);
-  scene.fog = new THREE.Fog(cfg.fog, 90, 300);
+  renderer.setClearColor(SP_PALETTE.sky);
+  scene.fog = new THREE.Fog(SP_PALETTE.fog, 90, 300);
   const group = new THREE.Group();
   scene.add(group);
   const L = cfg.L, W = cfg.W, H = cfg.H;
@@ -37,12 +38,12 @@ export function buildRaceCourse(cfg) {
   group.add(make3DClouds(40, 200, 50));
   group.add(makeFloatingIslands(15, 180));
 
-  // 3D Tile Floor for the main race track
-  const floor = make3DTileFloor(W, L, 4, heightFn, 0x4A90E2, 0xFF5CA8); // Cyan and Pink
+  // 3D Tile Floor for the main race track (with pits)
+  const floor = make3DTileFloor(W, L, 4, heightFn, SP_PALETTE.floor1, SP_PALETTE.floor2, cfg.pits || []);
   group.add(floor);
 
   // lane stripes down the center of the track (so floor reads as a "road")
-  const stripeMat = lambertMat(0xFFD23F);
+  const stripeMat = lambertMat(SP_PALETTE.edge);
   for (let z = 4; z < L; z += 8) {
     const s = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.06, 3), stripeMat);
     s.position.set(0, heightFn(z) + 0.04, z); group.add(s);
@@ -51,55 +52,55 @@ export function buildRaceCourse(cfg) {
   // side walls
   for (const sx of [-1, 1]) {
     const wallH = 8;
-    const wall = new THREE.Mesh(new THREE.BoxGeometry(1.5, wallH, L), lambertMat(cfg.terrainColor));
+    const wall = new THREE.Mesh(new THREE.BoxGeometry(1.5, wallH, L), lambertMat(SP_PALETTE.terrain));
     wall.position.set(sx * (W + 0.5), heightFn(L * 0.5) + wallH * 0.5 - 2, L / 2);
     wall.castShadow = true; wall.receiveShadow = true; group.add(wall);
-    const edge = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, L), lambertMat(cfg.edgeColor));
+    const edge = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, L), lambertMat(SP_PALETTE.edge));
     edge.position.set(sx * (W + 0.5), heightFn(L * 0.5) + wallH - 2, L / 2); group.add(edge);
     for (let z = 4; z < L; z += 12) {
-      const p = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 2.4, 6), lambertMat(cfg.edgeColor));
+      const p = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 2.4, 6), lambertMat(SP_PALETTE.edge));
       p.position.set(sx * (W + 0.5), heightFn(z) + 1.2, z); group.add(p);
     }
   }
   // under-floor (fills void)
   const underGeo = new THREE.PlaneGeometry(W * 4, L); underGeo.rotateX(-Math.PI / 2);
-  const underFloor = new THREE.Mesh(underGeo, lambertMat(0x0B0E1A));
+  const underFloor = new THREE.Mesh(underGeo, lambertMat(SP_PALETTE.wall));
   underFloor.position.set(0, -12, L / 2); group.add(underFloor);
 
-  group.add(makeGridFloor(540, -34, cfg.gridColor));
+  group.add(makeGridFloor(540, -34, SP_PALETTE.grass));
   group.add(makeMoons());
   const orbs = makeOrbs(36, 90, 8); group.add(orbs);
   makeFloatingCandles(group, L, W, 22);
-  makeChartLine(group, L, W, 4, cfg.edgeColor);
+  makeChartLine(group, L, W, 4, SP_PALETTE.edge);
 
-  // buildings along track — pump.fun saturated palette against navy sky
-  const bPalette = [cfg.terrainColor, cfg.edgeColor, 0xFFD23F, 0x5FCB88, 0xFF5CA8, 0xA77BFF, 0x4F8CFF];
+  // buildings along track — pastel palette
+  const bPalette = [SP_PALETTE.floor1, SP_PALETTE.edge, SP_PALETTE.terrain, SP_PALETTE.wall, SP_PALETTE.floor2];
   const bTypes = ['cone', 'pyramid', 'dome', 'flat'];
   for (let z = 15; z < L - 10; z += 28) {
     for (const sx of [-1, 1]) {
       const bh = 5 + Math.random() * 6, bw = 4 + Math.random() * 2;
-      const b = makeBuilding({ w: bw, d: bw, h: bh, color: bPalette[Math.floor(z) % bPalette.length], roofColor: bPalette[(Math.floor(z) + 2) % bPalette.length], roofType: bTypes[Math.floor(z / 28) % bTypes.length], winColor: 0xFFD23F, flag: z % 56 === 0 });
+      const b = makeBuilding({ w: bw, d: bw, h: bh, color: bPalette[Math.floor(z) % bPalette.length], roofColor: bPalette[(Math.floor(z) + 2) % bPalette.length], roofType: bTypes[Math.floor(z / 28) % bTypes.length], winColor: SP_PALETTE.edge, flag: z % 56 === 0 });
       b.position.set(sx * (W + 6 + Math.random() * 3), 0, z);
       b.rotation.y = Math.random() * Math.PI;
       group.add(b);
     }
   }
-  const grandstand = makeBuilding({ w: W * 2.2, d: 5, h: 12, color: cfg.edgeColor, roofColor: cfg.terrainColor, roofType: 'flat', winColor: 0xFFD23F, flag: false });
+  const grandstand = makeBuilding({ w: W * 2.2, d: 5, h: 12, color: SP_PALETTE.edge, roofColor: SP_PALETTE.terrain, roofType: 'flat', winColor: SP_PALETTE.edge, flag: false });
   grandstand.position.set(0, 0, L + 8); group.add(grandstand);
 
-  // start gate — pump.fun mint pillars
+  // start gate
   const sgate = new THREE.Group();
-  for (const sx of [-1, 1]) { const p = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 6, 12), lambertMat(0xFF8A3D)); p.position.set(sx * (W - 1), heightFn(0) + 3, 0); sgate.add(p); }
-  const sgTop = new THREE.Mesh(new THREE.BoxGeometry(W * 2, 1, 0.8), lambertMat(0xFFD23F)); sgTop.position.set(0, heightFn(0) + 6, 0); sgate.add(sgTop);
+  for (const sx of [-1, 1]) { const p = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 6, 12), lambertMat(SP_PALETTE.edge)); p.position.set(sx * (W - 1), heightFn(0) + 3, 0); sgate.add(p); }
+  const sgTop = new THREE.Mesh(new THREE.BoxGeometry(W * 2, 1, 0.8), lambertMat(SP_PALETTE.terrain)); sgTop.position.set(0, heightFn(0) + 6, 0); sgate.add(sgTop);
   group.add(sgate);
 
-  // finish gate — pump.fun green pillars
+  // finish gate
   const gate = new THREE.Group();
-  for (const sx of [-1, 1]) { const p = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 8, 14), lambertMat(0x5FCB88)); p.position.set(sx * (W - 1), heightFn(L) + 4, L); gate.add(p); }
-  const beam = new THREE.Mesh(new THREE.BoxGeometry(W * 2, 1.1, 0.5), lambertMat(0x5FCB88)); beam.position.set(0, heightFn(L) + 8, L); gate.add(beam);
-  const gTop = new THREE.Mesh(new THREE.BoxGeometry(W * 2, 0.8, 0.8), lambertMat(0xFFD23F)); gTop.position.set(0, heightFn(L) + 9, L); gate.add(gTop);
+  for (const sx of [-1, 1]) { const p = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 8, 14), lambertMat(SP_PALETTE.terrain)); p.position.set(sx * (W - 1), heightFn(L) + 4, L); gate.add(p); }
+  const beam = new THREE.Mesh(new THREE.BoxGeometry(W * 2, 1.1, 0.5), lambertMat(SP_PALETTE.terrain)); beam.position.set(0, heightFn(L) + 8, L); gate.add(beam);
+  const gTop = new THREE.Mesh(new THREE.BoxGeometry(W * 2, 0.8, 0.8), lambertMat(SP_PALETTE.edge)); gTop.position.set(0, heightFn(L) + 9, L); gate.add(gTop);
   group.add(gate);
-  const finishText = makeBillboard(cfg.finishText || 'TO THE MOON', 0x5fcb88, 7);
+  const finishText = makeBillboard(cfg.finishText || 'TO THE MOON', SP_PALETTE.terrain, 7);
   finishText.position.set(0, heightFn(L) + 11, L + 3); group.add(finishText);
 
   // ---- obstacles ----
@@ -141,7 +142,7 @@ export function buildRaceCourse(cfg) {
   });
 
   if (cfg.lava) {
-    const lava = new THREE.Mesh(new THREE.PlaneGeometry(W * 2.4, L), new THREE.MeshBasicMaterial({ color: 0xFF5151, transparent: true, opacity: 0.65 }));
+    const lava = new THREE.Mesh(new THREE.PlaneGeometry(W * 2.4, L), new THREE.MeshBasicMaterial({ color: SP_PALETTE.lava, transparent: true, opacity: 0.8 }));
     lava.rotation.x = -Math.PI / 2; lava.position.set(0, -8, L / 2); group.add(lava);
   }
 

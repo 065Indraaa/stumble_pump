@@ -6,7 +6,7 @@
 // and drives camera + HUD per mode.
 // ============================================================
 import * as THREE from 'three';
-import { scene, camera, shakeCamera, tickCamShake, MOBILE } from './core/Engine.js';
+import { scene, renderer, camera, shakeCamera, tickCamShake, MOBILE } from './core/Engine.js';
 import { initFX, updateFX, spawnConfettiBurst } from './core/FX.js';
 import { SFX, startAmbient, stopAmbient, isMuted, setMute as setAudioMute } from './core/AudioManager.js';
 import { state as G, register, showScreen, setMode, tick as smTick, disposeActors, disposeMap } from './core/SceneManager.js';
@@ -19,8 +19,8 @@ import { Actor } from './character/Actor.js';
 import { spawnBot } from './character/BotController.js';
 import { SKINS, EMOTES, TRAILS } from './character/skins.js';
 import { lambertMat } from './core/AssetFactory.js';
-import { clearScene } from './levels/env.js';
-import { MOVE_SPEED } from './config/constants.js';
+import { clearScene, make3DClouds, makeFloatingIslands, make3DTileFloor } from './levels/env.js';
+import { MOVE_SPEED, SP_PALETTE } from './config/constants.js';
 
 import { buildLobby } from './levels/lobby.js';
 import { buildBondingCurve } from './levels/bondingCurve.js';
@@ -73,16 +73,19 @@ export function updateTopBar() {
 // ============================================================
 function buildPreview() {
   clearScene();
+  renderer.setClearColor(SP_PALETTE.sky);
+  scene.fog = new THREE.Fog(SP_PALETTE.fog, 30, 150);
   const group = new THREE.Group(); scene.add(group);
-  // group.add(makeBackdrop('menu_bg', { radius: 80, height: 90, y: 20 })); // Removed as backdrop is now handled by level logic or 3D elements
-  // pump.fun podium: dark navy disc with mint edge ring
-  const floor = new THREE.Mesh(new THREE.CylinderGeometry(18, 18, 1.5, 40), lambertMat(0x1B1D27));
-  floor.position.y = -0.8; floor.receiveShadow = true; group.add(floor);
-  const edge = new THREE.Mesh(new THREE.TorusGeometry(18, 0.3, 10, 72), lambertMat(0x5FCB88));
-  edge.rotation.x = -Math.PI / 2; edge.position.y = -0.05; group.add(edge);
-  // podium glow ring (flat, no bloom)
-  const ring = new THREE.Mesh(new THREE.RingGeometry(18.4, 19.6, 64), lambertMat(0x5FCB88));
-  ring.rotation.x = -Math.PI / 2; ring.position.y = -0.04; ring.material.transparent = true; ring.material.opacity = 0.35; group.add(ring);
+  
+  // 3D Background elements
+  group.add(make3DClouds(20, 100, 30));
+  group.add(makeFloatingIslands(8, 80));
+
+  // AAA Stumble Guys Podium
+  const floorFn = () => 0;
+  const floor = make3DTileFloor(8, 8, 4, floorFn, SP_PALETTE.floor1, SP_PALETTE.floor2);
+  group.add(floor);
+
   if (G.preview) { G.preview.dispose(); }
   G.preview = new Actor(shared.selectedSkin, true, 'player');
   G.preview.pos.set(0, 0, 0);
