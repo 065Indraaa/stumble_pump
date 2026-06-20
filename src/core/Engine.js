@@ -28,7 +28,10 @@ renderer.toneMappingExposure = 1.05;
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(CAM_FOV, window.innerWidth / window.innerHeight, 0.1, 800);
+// Apply portrait-aware FOV right away so the very first frame is framed well.
+if (window.innerHeight > window.innerWidth) camera.fov = Math.min(82, CAM_FOV + 8);
 camera.position.set(0, 6, 12);
+camera.updateProjectionMatrix();
 
 // ---- Lights: Bright, cheerful sunny day rig (Party Royale style) ----
 // World reads bright and colorful, no dark navy tints.
@@ -74,6 +77,10 @@ export function isPostOn() { return false; }
 // ---- resize ----
 window.addEventListener('resize', onResize);
 function onResize() {
+  const portrait = window.innerHeight > window.innerWidth;
+  // On portrait phones widen the FOV slightly so more of the world is visible
+  // (avoids the player feeling "zoomed in" on a tall thin screen).
+  camera.fov = portrait ? Math.min(82, CAM_FOV + 8) : CAM_FOV;
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);

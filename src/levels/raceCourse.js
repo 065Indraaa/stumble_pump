@@ -13,7 +13,8 @@ import * as THREE from 'three';
 import { scene, renderer, camera } from '../core/Engine.js';
 import { lambertMat, basicMat, makeBillboard } from '../core/AssetFactory.js';
 import {
-  clearScene, make3DClouds, makeFloatingIslands, make3DTileFloor
+  clearScene, make3DClouds, makeFloatingIslands, make3DTileFloor,
+  makeTree, makeBush, makeRock, makeHillsRing,
 } from './env.js';
 import { makeRedCandle, updateRedCandle } from '../entities/RedCandle.js';
 import { makeGreenTrampoline, updateGreenTrampoline, BOUNCE_VELOCITY } from '../entities/GreenTrampoline.js';
@@ -61,10 +62,76 @@ export function buildRaceCourse(cfg) {
       p.position.set(sx * (W + 0.5), heightFn(z) + 1.2, z); group.add(p);
     }
   }
-  // under-floor (fills void)
-  const underGeo = new THREE.PlaneGeometry(W * 4, L); underGeo.rotateX(-Math.PI / 2);
-  const underFloor = new THREE.Mesh(underGeo, lambertMat(SP_PALETTE.wall));
-  underFloor.position.set(0, -12, L / 2); group.add(underFloor);
+  // ---- Ground world under/around the track ----
+  // A smooth grass ribbon that follows the track height curve (so the track
+  // reads as an elevated road on real terrain), built as a displaced plane so
+  // it never staircases on slopes. Track top = heightFn(z); grass top sits
+  // 1 unit below it so the platform edge reads clearly.
+  const GRASS_DROP = 1.0;
+  const GROUND_HALF_W = W + 16;
+  const grassGeo = new THREE.PlaneGeometry(GROUND_HALF_W * 2, L + 8, 2, Math.max(8, Math.round(L / 6)));
+  grassGeo.rotateX(-Math.PI / 2);
+  {
+    const p = grassGeo.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const zw = p.getZ(i) + (L + 8) / 2;            // map plane -L/2..L/2 → 0..L
+      const zc = THREE.MathUtils.clamp(zw, 0, L);
+      p.setY(i, heightFn(zc) - GRASS_DROP);
+    }
+    p.needsUpdate = true;
+    grassGeo.computeVertexNormals();
+  }
+  const grassMesh = new THREE.Mesh(grassGeo, lambertMat(SP_PALETTE.terrain));
+  grassMesh.position.z = (L + 8) / 2;                 // shift so ribbon spans 0..L
+  grassMesh.receiveShadow = true;
+  group.add(grassMesh);
+
+  // Solid dark floor far below as a safety backdrop (catches any view-through)
+  const underGeo = new THREE.PlaneGeometry(GROUND_HALF_W * 2 + 60, L + 60);
+  underGeo.rotateX(-Math.PI / 2);
+  const underFloor = new THREE.Mesh(underGeo, lambertMat(SP_PALETTE.dirt));
+  underFloor.position.set(0, heightFn(L * 0.5) - 14, L / 2);
+  underFloor.receiveShadow = true;
+  group.add(underFloor);
+
+  // ---- Forest scattered along both sides of the track (no empty grass) ----
+  // Deterministic positions so layout is stable; trees sit ON the grass
+  // surface (heightFn(z) - GRASS_DROP), never sunk into it.
+  let _seed = 9753;
+  const _rnd = () => { _seed = (_seed * 1103515245 + 12345) & 0x7fffffff; return _seed / 0x7fffffff; };
+  const treeCols = [SP_PALETTE.terrain, 0x4FAE6A, 0x6BCB95, SP_PALETTE.terrain];
+  const groundY = (z) => heightFn(THREE.MathUtils.clamp(z, 0, L)) - GRASS_DROP;
+  for (let z = 12; z < L; z += 18) {
+    for (const sx of [-1, 1]) {
+      if (_rnd() < 0.7) {
+        const x = sx * (W + 4 + _rnd() * 8);
+        const sc = 0.9 + _rnd() * 0.8;
+        const tree = makeTree(x, z, sc, treeCols[Math.floor(z / 18) % treeCols.length]);
+        tree.position.y = groundY(z);
+        group.add(tree);
+      } else {
+        const x = sx * (W + 4 + _rnd() * 6);
+        const sc = 0.7 + _rnd() * 0.5;
+        const b = makeBush(x, z, sc, treeCols[Math.floor(z / 18) % treeCols.length]);
+        b.position.y = groundY(z);
+        group.add(b);
+      }
+    }
+  }
+  for (let i = 0; i < 10; i++) {
+    const z = _rnd() * L;
+    const sx = _rnd() < 0.5 ? -1 : 1;
+    const x = sx * (W + 5 + _rnd() * 10);
+    const sc = 0.7 + _rnd() * 0.9;
+    const r = makeRock(x, z, sc, [0x9AA0AA, 0xB0B6C0, 0x8C909A][i % 3]);
+    r.position.y = groundY(z);
+    group.add(r);
+  }
+
+  // ---- Distant rolling hills ring around the whole track ----
+  const hills = makeHillsRing(95, 18);
+  hills.position.set(0, 0, L / 2);
+  group.add(hills);
 
   // Per-level themed decor (each level supplies its own unique elements)
   if (typeof cfg.buildDecor === 'function') {

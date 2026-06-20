@@ -26,12 +26,13 @@ function log(msg) {
   if (dbg) dbg.textContent = msg;
 }
 
+// NOTE: The rotate-to-landscape prompt has been intentionally removed.
+// The game is fully playable in portrait on mobile (vertical-first layout,
+// portrait-friendly HUD + controls). We keep the element in the DOM but
+// never force landscape, so users can hold the phone however they like.
 function checkOrientation() {
-  if (!MOBILE) return;
   const rp = document.getElementById('rotate-prompt');
-  if (!rp) return;
-  const isPortrait = window.innerHeight > window.innerWidth;
-  rp.classList.toggle('hidden', !isPortrait);
+  if (rp) rp.classList.add('hidden');
 }
 window.addEventListener('orientationchange', () => setTimeout(checkOrientation, 100));
 window.addEventListener('resize', checkOrientation);

@@ -7,22 +7,26 @@
 import * as THREE from 'three';
 import { scene, renderer } from '../core/Engine.js';
 import { lambertMat, basicMat } from '../core/AssetFactory.js';
-import { clearScene, make3DClouds, makeFloatingIslands } from './env.js';
+import { clearScene, make3DClouds, makeFloatingIslands, makeGroundDisc, makeHillsRing, makeForestScatter } from './env.js';
 import { makeHexPlatform, warnPlatform, updateHexPlatform } from '../entities/HexPlatform.js';
 import { SFX } from '../core/AudioManager.js';
 import { SP_PALETTE } from '../config/constants.js';
 
 export function buildRugpull() {
-  clearScene(); 
+  clearScene();
   renderer.setClearColor(SP_PALETTE.sky);
-  scene.fog = new THREE.Fog(SP_PALETTE.fog, 50, 150);
+  scene.fog = new THREE.Fog(SP_PALETTE.fog, 55, 200);
   const group = new THREE.Group(); scene.add(group);
-  group.add(make3DClouds(20, 140, 40));
-  group.add(makeFloatingIslands(8, 120));
+  group.add(make3DClouds(20, 150, 45));
+  group.add(makeFloatingIslands(8, 125));
+  // distant rolling hills ring fills the horizon
+  group.add(makeHillsRing(115, 18));
 
-  // Far ground plane (catches depth, no gameplay use)
-  const voidFloor = new THREE.Mesh(new THREE.PlaneGeometry(300, 300), lambertMat(SP_PALETTE.wall));
-  voidFloor.rotation.x = -Math.PI / 2; voidFloor.position.y = -20; group.add(voidFloor);
+  // ---- Ground world below the floating arena (no empty void) ----
+  // The hex platforms hover above a solid grass world ringed by forest, so
+  // when a player falls they drop toward real scenery, not empty space.
+  group.add(makeGroundDisc(120, SP_PALETTE.terrain, SP_PALETTE.dirt));
+  group.add(makeForestScatter(55, 110, 35791));
 
   // arena ring
   const arenaRing = new THREE.Mesh(new THREE.TorusGeometry(28, 0.4, 12, 64), lambertMat(SP_PALETTE.terrain));

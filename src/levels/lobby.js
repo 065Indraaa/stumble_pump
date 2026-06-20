@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { scene, renderer } from '../core/Engine.js';
 import { lambertMat, metalMat } from '../core/AssetFactory.js';
-import { clearScene, make3DClouds, makeFloatingIslands } from './env.js';
+import { clearScene, make3DClouds, makeFloatingIslands, makeGroundDisc, makeHillsRing, makeForestScatter, makeBannerArch, makeFenceRing } from './env.js';
 import { SP_PALETTE } from '../config/constants.js';
 
 // ── Geometry helpers ──────────────────────────────────────────────────────
@@ -39,6 +39,13 @@ export function buildLobby() {
   // ── SKY ────────────────────────────────────────────────────────────────
   group.add(make3DClouds(20, 160, 55));
   group.add(makeFloatingIslands(8, 130));
+  // distant rolling hills ring fills the horizon
+  group.add(makeHillsRing(110, 18));
+
+  // ── WORLD GROUND (solid grass disc under the arena — no floating void) ─
+  group.add(makeGroundDisc(110, SP_PALETTE.terrain, SP_PALETTE.dirt));
+  // forest scattered between the arena wall and the hills
+  group.add(makeForestScatter(46, 100, 24680));
 
   // ── ARENA DIMENSIONS ────────────────────────────────────────────────────
   const ARENA_R = 26;       // playable circle radius
@@ -172,6 +179,19 @@ export function buildLobby() {
     }
   }
 
+  // ── BANNER ARCHES inside the arena (2 cheer gates flanking the spawn) ──
+  const archN = makeBannerArch(16, 8, SP_PALETTE.edge, SP_PALETTE.floor2);
+  archN.position.set(0, 0, -16);
+  group.add(archN);
+  const archS = makeBannerArch(16, 8, SP_PALETTE.terrain, SP_PALETTE.floor1);
+  archS.position.set(0, 0, 16);
+  archS.rotation.y = Math.PI;
+  group.add(archS);
+
+  // (The decorative fence ring was removed — it clipped through the spectator
+  // stands at the cardinal points. The arena wall + stands already read as a
+  // solid boundary.)
+
   // ── PLAYABLE CONTRACT ──────────────────────────────────────────────────
   return {
     type: 'lobby',
@@ -189,8 +209,11 @@ export function buildLobby() {
       a.pos.set((Math.random() - 0.5) * 8, 4, (Math.random() - 0.5) * 8);
       a.vel.set(0, 0, 0);
     },
-    update(_dt, _t) {
-      // No animated objects — everything is static and solid
+    update(dt, t) {
+      // animate the procedural clouds + islands for a living sky
+      for (const child of group.children) {
+        if (typeof child.userData?.update === 'function') child.userData.update(t);
+      }
     },
     dispose() { scene.remove(group); },
   };

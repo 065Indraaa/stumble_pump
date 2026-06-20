@@ -19,7 +19,7 @@ import { Actor } from './character/Actor.js';
 import { spawnBot } from './character/BotController.js';
 import { SKINS, EMOTES, TRAILS } from './character/skins.js';
 import { lambertMat } from './core/AssetFactory.js';
-import { clearScene, make3DClouds, makeFloatingIslands } from './levels/env.js';
+import { clearScene, make3DClouds, makeFloatingIslands, makeGroundDisc, makeHillsRing, makeForestScatter, makeBannerArch } from './levels/env.js';
 import { MOVE_SPEED, SP_PALETTE } from './config/constants.js';
 
 import { buildLobby } from './levels/lobby.js';
@@ -49,6 +49,15 @@ let roomPollInterval = null;
 const _camTarget = new THREE.Vector3();
 const _v1 = new THREE.Vector3();
 
+// Walk the preview stage group and call any userData.update(t) hooks so
+// clouds/islands in the menu/customize backdrop keep drifting.
+function _updateSky(parent, t) {
+  if (!parent) return;
+  for (const child of parent.children) {
+    if (typeof child.userData?.update === 'function') child.userData.update(t);
+  }
+}
+
 function randomBotSkinLocal() { const k = Object.keys(SKINS); return k[Math.floor(Math.random() * k.length)]; }
 
 export function applyProfile(prof) {
@@ -69,50 +78,64 @@ export function updateTopBar() {
 }
 
 // ============================================================
-// MENU / CUSTOMIZE preview — Stumble Pump showcase stage
+// MENU / CUSTOMIZE preview — Stumble Guys-style showcase plaza.
+// Character stands on a raised hex stage that sits on a solid grass
+// ground disc, surrounded by trees/bushes/rocks/flowers, with distant
+// rolling hills + floating clouds filling the sky so there is no empty
+// space — a real 3D party-royale lobby backdrop, not a floating void.
 // ============================================================
 function buildPreview() {
   clearScene();
   renderer.setClearColor(SP_PALETTE.sky);
-  scene.fog = new THREE.Fog(SP_PALETTE.fog, 40, 180);
+  scene.fog = new THREE.Fog(SP_PALETTE.fog, 55, 240);
   const group = new THREE.Group(); scene.add(group);
 
-  // ── SKY ────────────────────────────────────────────────────────────
-  group.add(make3DClouds(18, 90, 35));
-  group.add(makeFloatingIslands(6, 75));
+  // ── SKY DECOR ───────────────────────────────────────────────────────
+  group.add(make3DClouds(22, 120, 42));
+  group.add(makeFloatingIslands(5, 95));
+  // distant rolling hills ring fills the horizon (no empty sky backdrop)
+  group.add(makeHillsRing(85, 16));
+
+  // ── GROUND DISC (solid grass world, no floating void) ───────────────
+  group.add(makeGroundDisc(70, SP_PALETTE.terrain, SP_PALETTE.dirt));
+
+  // ── SURROUNDING FOREST (trees/bushes/rocks/flowers around stage) ───
+  group.add(makeForestScatter(13, 62, 7777));
 
   // ── STAGE PLATFORM (hexagonal showcase) ───────────────────────────
-  // Hex disc: top surface at Y=0, character stands here
+  // Hex disc: top surface at Y=0.4 (slightly raised above grass so it
+  // reads as a distinct podium). Character stands on top.
+  const STAGE_TOP_Y = 0.4;
   const stageDisc = new THREE.Mesh(
-    new THREE.CylinderGeometry(6, 6.5, 1.2, 6),
+    new THREE.CylinderGeometry(6, 6.5, STAGE_TOP_Y + 0.8, 6),
     new THREE.MeshLambertMaterial({ color: SP_PALETTE.floor1 })
   );
-  stageDisc.position.y = -0.6; // top at Y=0
+  stageDisc.position.y = (STAGE_TOP_Y - 0.8) / 2; // top surface at STAGE_TOP_Y
   stageDisc.castShadow = true; stageDisc.receiveShadow = true;
   group.add(stageDisc);
 
-  // Hex edge trim (top ring, Y=0)
+  // Hex edge trim (top ring, sits on top surface)
   const stageTrim = new THREE.Mesh(
     new THREE.TorusGeometry(6, 0.22, 8, 6),
     new THREE.MeshLambertMaterial({ color: SP_PALETTE.floor2 })
   );
-  stageTrim.rotation.x = -Math.PI / 2; stageTrim.position.y = 0.02;
+  stageTrim.rotation.x = -Math.PI / 2; stageTrim.position.y = STAGE_TOP_Y + 0.02;
   group.add(stageTrim);
 
-  // Under-pedestal (tapers down)
+  // Under-pedestal (tapers down to the grass)
   const pedestal = new THREE.Mesh(
-    new THREE.CylinderGeometry(4.5, 3.5, 2.5, 6),
-    new THREE.MeshLambertMaterial({ color: SP_PALETTE.terrain })
-  );
-  pedestal.position.y = -2.05;
-  pedestal.castShadow = true; group.add(pedestal);
-
-  // Stage base ring
-  const baseRing = new THREE.Mesh(
-    new THREE.TorusGeometry(3.8, 0.35, 8, 6),
+    new THREE.CylinderGeometry(4.5, 3.2, 2.5, 6),
     new THREE.MeshLambertMaterial({ color: SP_PALETTE.edge })
   );
-  baseRing.rotation.x = -Math.PI / 2; baseRing.position.y = -3.3;
+  pedestal.position.y = STAGE_TOP_Y - 2.05;
+  pedestal.castShadow = true; group.add(pedestal);
+
+  // Stage base ring (decorative ring on the grass)
+  const baseRing = new THREE.Mesh(
+    new THREE.TorusGeometry(5.2, 0.3, 8, 6),
+    new THREE.MeshLambertMaterial({ color: SP_PALETTE.floor2 })
+  );
+  baseRing.rotation.x = -Math.PI / 2; baseRing.position.y = -0.1;
   group.add(baseRing);
 
   // ── SPOTLIGHT COLUMNS (3 columns around the stage) ────────────────
@@ -122,12 +145,19 @@ function buildPreview() {
     const cx = Math.cos(a) * cr, cz = Math.sin(a) * cr;
     const colColor = [SP_PALETTE.floor1, SP_PALETTE.terrain, SP_PALETTE.edge][i];
 
-    // Column shaft (Y: 0 to 5)
+    // Column shaft base sits on grass (Y=0), top at Y=5
     const shaft = new THREE.Mesh(
       new THREE.CylinderGeometry(0.4, 0.5, 5, 10),
       new THREE.MeshLambertMaterial({ color: colColor })
     );
     shaft.position.set(cx, 2.5, cz); shaft.castShadow = true; group.add(shaft);
+
+    // Column base block (so shaft meets ground cleanly, no floating)
+    const shaftBase = new THREE.Mesh(
+      new THREE.BoxGeometry(1.0, 0.3, 1.0),
+      new THREE.MeshLambertMaterial({ color: SP_PALETTE.dirt })
+    );
+    shaftBase.position.set(cx, 0.15, cz); group.add(shaftBase);
 
     // Column capital (top)
     const capital = new THREE.Mesh(
@@ -138,15 +168,24 @@ function buildPreview() {
 
     // Lamp globe on top
     const lamp = new THREE.Mesh(
-      new THREE.SphereGeometry(0.55, 10, 8),
+      new THREE.SphereGeometry(0.55, 12, 10),
       new THREE.MeshLambertMaterial({ color: 0xFFFADD })
     );
     lamp.position.set(cx, 6.1, cz); group.add(lamp);
   }
 
+  // ── TWO CHEERFUL BANNER ARCHES flanking the stage ──────────────────
+  const archL = makeBannerArch(14, 6, SP_PALETTE.edge, SP_PALETTE.floor2);
+  archL.position.set(0, 0, 11);
+  archL.rotation.y = Math.PI; // face the camera
+  group.add(archL);
+  const archR = makeBannerArch(14, 6, SP_PALETTE.terrain, SP_PALETTE.floor1);
+  archR.position.set(0, 0, -11);
+  group.add(archR);
+
   // ── TROPHY / CHAMPION CUP (to the right of character) ─────────────
   const trophyGroup = new THREE.Group();
-  trophyGroup.position.set(5, 0, -2);
+  trophyGroup.position.set(5, STAGE_TOP_Y, -2);
   group.add(trophyGroup);
 
   // Cup body
@@ -193,12 +232,12 @@ function buildPreview() {
     new THREE.BoxGeometry(4.5, 0.8, 0.3),
     new THREE.MeshLambertMaterial({ color: SP_PALETTE.terrain })
   );
-  textPlate.position.set(0, -2.0, 3.2);
+  textPlate.position.set(0, -1.6, 3.2);
   group.add(textPlate);
 
   if (G.preview) { G.preview.dispose(); }
   G.preview = new Actor(shared.selectedSkin, true, 'player');
-  G.preview.pos.set(0, 0, 0);
+  G.preview.pos.set(0, STAGE_TOP_Y, 0);
   // update menu skin tag
   const skinNameEl = document.getElementById('skin-name');
   if (skinNameEl && SKINS[shared.selectedSkin]) skinNameEl.textContent = SKINS[shared.selectedSkin].name;
@@ -874,8 +913,8 @@ function updateCamera(dt) {
   if (G.mode === 'menu' || G.mode === 'customize') {
     if (G.preview) {
       const a = G.modeT * 0.4;
-      camera.position.lerp(_camTarget.set(Math.sin(a) * 6, 2.5, Math.cos(a) * 6), 0.04);
-      camera.lookAt(0, 1.2, 0);
+      camera.position.lerp(_camTarget.set(Math.sin(a) * 6, 2.9, Math.cos(a) * 6), 0.04);
+      camera.lookAt(0, 1.6, 0);
     }
     return;
   }
@@ -887,7 +926,12 @@ function updateCamera(dt) {
     const laScale = G.mode === 'match' ? 0.6 : 0.3;
     const laX = speed > 0.1 ? (vx / speed) * Math.min(speed, 4) * laScale : 0;
     const laZ = speed > 0.1 ? (vz / speed) * Math.min(speed, 4) * laScale : 0;
-    _camTarget.set(p.x + laX + Math.sin(Input.camYaw) * 9, p.y + 4 + Input.camPitch * 3, p.z + laZ + Math.cos(Input.camYaw) * 9);
+    // Portrait phones are tall+thin → pull the camera a bit closer + higher so
+    // the player stays nicely framed without the action drifting off-screen.
+    const portrait = window.innerHeight > window.innerWidth * 1.15;
+    const camDist = portrait ? 7.0 : 9;
+    const camHeight = portrait ? 4.6 : 4;
+    _camTarget.set(p.x + laX + Math.sin(Input.camYaw) * camDist, p.y + camHeight + Input.camPitch * 3, p.z + laZ + Math.cos(Input.camYaw) * camDist);
     // frame-rate-independent smooth lerp (slightly slower for cinematic feel)
     const k = 1 - Math.exp(-(G.mode === 'match' ? 8 : 6) * dt);
     camera.position.lerp(_camTarget, k);
@@ -964,8 +1008,8 @@ function authResult(r) {
 // WIRE EVERYTHING
 // ============================================================
 export function wireAll() {
-  register('menu', { update: (dt, t) => { if (G.preview) { G.preview.anim.set('idle'); G.preview.anim.update(dt, t); } G.map?.update?.(t); } });
-  register('customize', { update: (dt, t) => { if (G.preview) { G.preview.anim.set('idle'); G.preview.anim.update(dt, t); } } });
+  register('menu', { update: (dt, t) => { if (G.preview) { G.preview.anim.set('idle'); G.preview.anim.update(dt, t); _updateSky(G.preview.root.parent, t); } } });
+  register('customize', { update: (dt, t) => { if (G.preview) { G.preview.anim.set('idle'); G.preview.anim.update(dt, t); _updateSky(G.preview.root.parent, t); } } });
   register('lobby', { update: updateLobby });
   register('roulette', { update: updateRoulette });
   register('match', { update: updateMatch });

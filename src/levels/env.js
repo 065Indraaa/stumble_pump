@@ -421,6 +421,228 @@ export function spawnGrid(n, baseX, baseZ) {
 
 // ---- 100% Real 3D Procedural Elements ----
 
+// Low-poly cartoon tree (Stumble Guys style chunky silhouette)
+const _treeGeo = {
+  trunk: new THREE.CylinderGeometry(0.18, 0.28, 1.6, 8),
+  leaf: new THREE.IcosahedronGeometry(1, 0),
+  leafS: new THREE.IcosahedronGeometry(0.7, 0),
+};
+export function makeTree(x = 0, z = 0, scale = 1, leafColor = SP_PALETTE.terrain) {
+  const g = new THREE.Group();
+  const trunk = new THREE.Mesh(_treeGeo.trunk, lambertMat(0x7A4A22));
+  trunk.position.y = 0.8 * scale;
+  trunk.scale.setScalar(scale);
+  trunk.castShadow = true; trunk.receiveShadow = true;
+  g.add(trunk);
+  // 3 stacked leaf blobs for a fluffy canopy (offset to avoid overlap)
+  const leafMat = lambertMat(leafColor);
+  const leafPositions = [[0, 1.9, 0, 1], [0.55, 1.7, 0.2, 0.7], [-0.45, 1.75, -0.15, 0.7], [0.05, 2.4, 0.05, 0.65]];
+  for (const [lx, ly, lz, ls] of leafPositions) {
+    const geo = ls > 0.85 ? _treeGeo.leaf : _treeGeo.leafS;
+    const leaf = new THREE.Mesh(geo, leafMat);
+    leaf.position.set(lx * scale, ly * scale, lz * scale);
+    leaf.scale.setScalar(scale * ls);
+    leaf.castShadow = true;
+    g.add(leaf);
+  }
+  g.position.set(x, 0, z);
+  g.rotation.y = Math.random() * Math.PI * 2;
+  return g;
+}
+
+// Chunky round bush
+const _bushGeo = new THREE.IcosahedronGeometry(0.7, 0);
+export function makeBush(x = 0, z = 0, scale = 1, color = SP_PALETTE.terrain) {
+  const g = new THREE.Group();
+  const mat = lambertMat(color);
+  // cluster of 3 overlapping spheres, slightly offset, scaled to look bushy
+  for (const [bx, bz, bs] of [[0, 0, 1], [0.45, 0.1, 0.75], [-0.4, -0.05, 0.7]]) {
+    const b = new THREE.Mesh(_bushGeo, mat);
+    b.position.set(bx * scale, 0.45 * scale * bs, bz * scale);
+    b.scale.setScalar(scale * bs);
+    b.castShadow = true; b.receiveShadow = true;
+    g.add(b);
+  }
+  g.position.set(x, 0, z);
+  return g;
+}
+
+// Rounded boulder
+const _rockGeo = new THREE.DodecahedronGeometry(0.8, 0);
+export function makeRock(x = 0, z = 0, scale = 1, color = 0x9AA0AA) {
+  const m = new THREE.Mesh(_rockGeo, lambertMat(color));
+  m.position.set(x, scale * 0.5, z);
+  m.scale.setScalar(scale);
+  m.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+  m.castShadow = true; m.receiveShadow = true;
+  return m;
+}
+
+// Cartoon flower (thin stem + petal disc + center)
+export function makeFlower(x = 0, z = 0, petal = 0xFF5CA8) {
+  const g = new THREE.Group();
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.5, 5), lambertMat(0x3FAE5A));
+  stem.position.y = 0.25; g.add(stem);
+  const petals = new THREE.Mesh(new THREE.CircleGeometry(0.18, 6), lambertMat(petal));
+  petals.rotation.x = -Math.PI / 2; petals.position.y = 0.5; g.add(petals);
+  const core = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), lambertMat(SP_PALETTE.floor2));
+  core.position.y = 0.55; g.add(core);
+  g.position.set(x, 0, z);
+  g.rotation.y = Math.random() * Math.PI * 2;
+  return g;
+}
+
+// Distant low-poly rolling hills ring to fill the horizon (no empty sky)
+export function makeHillsRing(innerR = 60, count = 14) {
+  const g = new THREE.Group();
+  const palette = [SP_PALETTE.terrain, 0x4FAE6A, 0x3FAE6A, SP_PALETTE.terrain];
+  const sharedGeo = new THREE.ConeGeometry(1, 1, 8);
+  for (let i = 0; i < count; i++) {
+    const a = (i / count) * Math.PI * 2 + (i % 2) * 0.18;
+    const r = innerR + (i % 3) * 6;
+    const rad = 14 + (i % 4) * 5;
+    const hgt = 16 + (i % 5) * 6;
+    const hill = new THREE.Mesh(sharedGeo, lambertMat(palette[i % palette.length]));
+    hill.scale.set(rad, hgt, rad);
+    hill.position.set(Math.cos(a) * r, hgt / 2 - 2, Math.sin(a) * r);
+    hill.castShadow = false; hill.receiveShadow = true;
+    g.add(hill);
+    // snow cap on the tallest
+    if (hgt > 28) {
+      const cap = new THREE.Mesh(sharedGeo, lambertMat(SP_PALETTE.cloud));
+      const capH = hgt * 0.22, capR = rad * 0.32;
+      cap.scale.set(capR, capH, capR);
+      cap.position.set(Math.cos(a) * r, hgt - capH / 2 - 2, Math.sin(a) * r);
+      g.add(cap);
+    }
+  }
+  return g;
+}
+
+// Large solid ground disc with grass + dirt skirt so the arena sits on
+// real ground instead of floating over an empty void.
+export function makeGroundDisc(radius = 60, topColor = SP_PALETTE.terrain, skirtColor = SP_PALETTE.dirt) {
+  const g = new THREE.Group();
+  // flat top (Y=0 surface) — bevelled disc
+  const top = new THREE.Mesh(
+    new THREE.CylinderGeometry(radius, radius * 0.96, 1.4, 48),
+    lambertMat(topColor)
+  );
+  top.position.y = -0.7;
+  top.receiveShadow = true; top.castShadow = false;
+  g.add(top);
+  // rocky tapered skirt under it (gives depth, hides the floating edge)
+  const skirt = new THREE.Mesh(
+    new THREE.CylinderGeometry(radius * 0.96, radius * 0.55, 10, 48, 1, true),
+    lambertMat(skirtColor)
+  );
+  skirt.position.y = -6.4;
+  skirt.receiveShadow = true;
+  g.add(skirt);
+  // thin rim band of lighter grass on the very edge
+  const rim = new THREE.Mesh(
+    new THREE.TorusGeometry(radius, 0.25, 8, 48),
+    lambertMat(SP_PALETTE.floor2)
+  );
+  rim.rotation.x = -Math.PI / 2;
+  rim.position.y = -0.05;
+  g.add(rim);
+  return g;
+}
+
+// Scattered forest decor: trees + bushes + rocks + flowers placed in a ring
+// around a central playable area (avoids the centre which is reserved).
+export function makeForestScatter(innerR = 12, outerR = 40, seed = 12345) {
+  const g = new THREE.Group();
+  // simple deterministic PRNG so layout is stable across reloads
+  let s = seed;
+  const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+  const treeColors = [SP_PALETTE.terrain, 0x4FAE6A, 0x6BCB95, SP_PALETTE.terrain];
+  // trees
+  const TREE_N = 22;
+  for (let i = 0; i < TREE_N; i++) {
+    const a = rnd() * Math.PI * 2;
+    const r = innerR + rnd() * (outerR - innerR);
+    const sc = 0.9 + rnd() * 1.1;
+    g.add(makeTree(Math.cos(a) * r, Math.sin(a) * r, sc, treeColors[i % treeColors.length]));
+  }
+  // bushes
+  for (let i = 0; i < 16; i++) {
+    const a = rnd() * Math.PI * 2;
+    const r = innerR + rnd() * (outerR - innerR);
+    const sc = 0.7 + rnd() * 0.8;
+    g.add(makeBush(Math.cos(a) * r, Math.sin(a) * r, sc, treeColors[(i + 2) % treeColors.length]));
+  }
+  // rocks
+  for (let i = 0; i < 10; i++) {
+    const a = rnd() * Math.PI * 2;
+    const r = innerR + rnd() * (outerR - innerR);
+    const sc = 0.6 + rnd() * 1.0;
+    g.add(makeRock(Math.cos(a) * r, Math.sin(a) * r, sc, [0x9AA0AA, 0xB0B6C0, 0x8C909A][i % 3]));
+  }
+  // flowers
+  const flowerCols = [0xFF5CA8, 0xFFD23F, 0xA77BFF, 0xFF8A3D, 0xFFFFFF];
+  for (let i = 0; i < 24; i++) {
+    const a = rnd() * Math.PI * 2;
+    const r = innerR + rnd() * (outerR - innerR);
+    g.add(makeFlower(Math.cos(a) * r, Math.sin(a) * r, flowerCols[i % flowerCols.length]));
+  }
+  return g;
+}
+
+// Banner arches (cheerful decorative gate props) — reusable across scenes
+export function makeBannerArch(span = 10, height = 6, color = SP_PALETTE.edge, accent = SP_PALETTE.floor2) {
+  const g = new THREE.Group();
+  const sharedPoleGeo = new THREE.CylinderGeometry(0.28, 0.34, height, 10);
+  const poleMat = lambertMat(color);
+  for (const sx of [-1, 1]) {
+    const p = new THREE.Mesh(sharedPoleGeo, poleMat);
+    p.position.set(sx * span / 2, height / 2, 0);
+    p.castShadow = true; p.receiveShadow = true;
+    g.add(p);
+    // base
+    const base = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.3, 0.7), lambertMat(SP_PALETTE.dirt));
+    base.position.set(sx * span / 2, 0.15, 0);
+    g.add(base);
+    // capital
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.36, 12, 10), lambertMat(accent));
+    cap.position.set(sx * span / 2, height + 0.2, 0);
+    g.add(cap);
+  }
+  // crossbeam
+  const beam = new THREE.Mesh(new THREE.BoxGeometry(span + 0.6, 0.6, 0.5), lambertMat(accent));
+  beam.position.set(0, height, 0);
+  beam.castShadow = true;
+  g.add(beam);
+  // hanging pennants
+  const penGeo = new THREE.ConeGeometry(0.35, 0.9, 3);
+  const penColors = [SP_PALETTE.terrain, SP_PALETTE.floor1, SP_PALETTE.floor2, SP_PALETTE.edge];
+  let pi = 0;
+  for (let p = -2; p <= 2; p++) {
+    const pen = new THREE.Mesh(penGeo, lambertMat(penColors[pi++ % penColors.length]));
+    pen.rotation.z = Math.PI;
+    pen.position.set(p * 1.6, height - 0.7, 0);
+    g.add(pen);
+  }
+  return g;
+}
+
+// Fence picket ring (decorative boundary, breaks up long straight edges)
+export function makeFenceRing(radius = 28, segments = 32, height = 0.8, color = 0xE8D8B8) {
+  const g = new THREE.Group();
+  const picketGeo = new THREE.BoxGeometry(0.18, height, 0.08);
+  const picketMat = lambertMat(color);
+  for (let i = 0; i < segments; i++) {
+    const a = (i / segments) * Math.PI * 2;
+    const p = new THREE.Mesh(picketGeo, picketMat);
+    p.position.set(Math.cos(a) * radius, height / 2, Math.sin(a) * radius);
+    p.rotation.y = -a;
+    p.castShadow = true;
+    g.add(p);
+  }
+  return g;
+}
+
 export function make3DClouds(count = 25, radius = 200, heightY = 60) {
   const group = new THREE.Group();
   const cloudMat = lambertMat(SP_PALETTE.cloud);
