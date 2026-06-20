@@ -9,7 +9,9 @@ import * as THREE from 'three';
 import { lambertMat } from '../core/AssetFactory.js';
 
 export function makeHexPlatform(x, z, col, baseY = -0.3) {
-  const mat = new THREE.MeshLambertMaterial({ color: 0xE2E8F0, emissive: 0x000000 });
+  // StandardMaterial (PBR) with emissive — picks up IBL reflections AND
+  // supports the warning-state emissive blink. Was raw MeshLambertMaterial.
+  const mat = new THREE.MeshStandardMaterial({ color: 0xE2E8F0, emissive: 0x000000, roughness: 0.5, metalness: 0.1 });
   const top = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 2.6, 0.6, 6), mat);
   top.receiveShadow = true; top.castShadow = true;
   // chamfer base

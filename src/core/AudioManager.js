@@ -9,11 +9,21 @@ let ctx = null, master = null, ambientNodes = [];
 let muted = localStorage.getItem(LS_MUTE) === '1';
 
 function ensure() {
+  // Share a single AudioContext across AudioManager + MusicManager so mute
+  // and master gain apply to both. Stored on window.__spAudioCtx.
   if (!ctx) {
-    ctx = new (window.AudioContext || window.webkitAudioContext)();
-    master = ctx.createGain();
+    if (!window.__spAudioCtx) {
+      const c = new (window.AudioContext || window.webkitAudioContext)();
+      const g = c.createGain();
+      g.gain.value = muted ? 0 : 0.55;
+      g.connect(c.destination);
+      window.__spAudioCtx = c;
+      window.__spMaster = g;
+    }
+    ctx = window.__spAudioCtx;
+    master = window.__spMaster;
+    // apply current mute state to the shared master
     master.gain.value = muted ? 0 : 0.55;
-    master.connect(ctx.destination);
   }
   if (ctx.state === 'suspended') ctx.resume();
 }

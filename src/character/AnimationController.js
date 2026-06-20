@@ -16,6 +16,7 @@ export class AnimationController {
     this.state = 'idle';
     this.t = 0;
     this.jumpT = 0; this.diveT = 0;
+    this.landT = 0;
     this.ragdollT = 0; this.recoverT = 0;
     this.idleTimer = 0; this.subIdle = 0;
     this.speed = 0;
@@ -29,6 +30,7 @@ export class AnimationController {
     if (this.state === state) return;
     if (state === 'jump') this.jumpT = 0;
     if (state === 'dive') this.diveT = 0;
+    if (state === 'land') this.landT = 0;
     if (state === 'ragdoll') { this.ragdollT = 0; this._initRagdoll(); }
     if (state === 'recover') { this.recoverT = 0; this._spawnStars(); }
     this.state = state;
@@ -60,21 +62,107 @@ export class AnimationController {
       case 'jump':      this._jump(dt); break;
       case 'dive':      this._dive(dt); break;
       case 'fall':      this._fall(t); break;
+      case 'land':      this._land(dt); break;
       case 'ragdoll':   this._ragdoll(dt); break;
       case 'recover':   this._recover(dt); break;
       case 'celebrate': this._celebrate(t); break;
+      // emotes — each is a looping expressive pose
+      case 'dance':     this._emoteDance(t); break;
+      case 'wave':      this._emoteWave(t); break;
+      case 'taunt':     this._emoteTaunt(t); break;
+      case 'point':     this._emotePoint(t); break;
+      case 'flex':      this._emoteFlex(t); break;
+      case 'cry':       this._emoteCry(t); break;
     }
     this._skinFx(t);
     this._updateStars(dt);
   }
 
+  // ===== EMOTE ANIMATIONS =====
+  // Each is a distinct looping pose so players can express in-lobby/arena.
+  _emoteDance(t) {
+    const b = this.b;
+    // side-to-side hip sway + raised alternating arms (disco)
+    b.hips.position.y = 0.92 + Math.abs(Math.sin(t * 6)) * 0.06;
+    b.hips.position.x = Math.sin(t * 3) * 0.06;
+    this._lerpRot(b.hips, 0, Math.sin(t * 3) * 0.25, 0, 0.2);
+    this._lerpRot(b.l_upperarm, -2.6, 0, 0.4 + Math.sin(t * 6) * 0.3, 0.25);
+    this._lerpRot(b.r_upperarm, -2.6, 0, -0.4 - Math.sin(t * 6) * 0.3, 0.25);
+    this._lerpRot(b.l_lowerarm, -1.4, 0, 0, 0.25);
+    this._lerpRot(b.r_lowerarm, -1.4, 0, 0, 0.25);
+    this._lerpRot(b.head, 0, Math.sin(t * 3) * 0.3, 0, 0.2);
+    this.rig.setFace('celebrating');
+  }
+  _emoteWave(t) {
+    const b = this.b;
+    // right arm raised, waving side to side
+    this._lerpRot(b.r_upperarm, -2.9, 0, -0.3, 0.25);
+    this._lerpRot(b.r_lowerarm, -0.3 + Math.sin(t * 8) * 0.5, 0, 0, 0.3);
+    this._lerpRot(b.l_upperarm, 0.1, 0, 0.15, 0.2);
+    this._lerpRot(b.head, 0, Math.sin(t * 2) * 0.15, 0, 0.2);
+    b.hips.position.y = 0.92 + Math.sin(t * 4) * 0.02;
+    this.rig.setFace('celebrating');
+  }
+  _emoteTaunt(t) {
+    const b = this.b;
+    // both hands on hips, chest out, slight lean back + head bob
+    this._lerpRot(b.l_upperarm, 0.6, 0, 0.5, 0.25);
+    this._lerpRot(b.r_upperarm, 0.6, 0, -0.5, 0.25);
+    this._lerpRot(b.l_lowerarm, -1.2, 0, 0, 0.25);
+    this._lerpRot(b.r_lowerarm, -1.2, 0, 0, 0.25);
+    this._lerpRot(b.chest, -0.2, 0, 0, 0.2);
+    this._lerpRot(b.head, -0.15, Math.sin(t * 5) * 0.2, Math.sin(t * 2) * 0.1, 0.25);
+    b.hips.position.y = 0.92;
+    this.rig.setFace('celebrating');
+  }
+  _emotePoint(t) {
+    const b = this.b;
+    // right arm extended forward pointing, slight forward lean
+    this._lerpRot(b.r_upperarm, -1.5, 0, -0.1, 0.25);
+    this._lerpRot(b.r_lowerarm, 0, 0, 0, 0.25);
+    this._lerpRot(b.l_upperarm, 0.1, 0, 0.2, 0.2);
+    this._lerpRot(b.chest, -0.15, Math.sin(t * 1.5) * 0.1, 0, 0.2);
+    this._lerpRot(b.head, 0, Math.sin(t * 1.5) * 0.1, 0, 0.2);
+    b.hips.position.y = 0.92;
+    this.rig.setFace('normal');
+  }
+  _emoteFlex(t) {
+    const b = this.b;
+    // both arms flexed up (biceps pose), slight bounce
+    this._lerpRot(b.l_upperarm, -2.4, 0, 0.9, 0.25);
+    this._lerpRot(b.r_upperarm, -2.4, 0, -0.9, 0.25);
+    this._lerpRot(b.l_lowerarm, -2.0, 0, 0, 0.25);
+    this._lerpRot(b.r_lowerarm, -2.0, 0, 0, 0.25);
+    this._lerpRot(b.chest, -0.25, 0, 0, 0.2);
+    b.hips.position.y = 0.92 + Math.abs(Math.sin(t * 4)) * 0.04;
+    this.rig.setFace('celebrating');
+  }
+  _emoteCry(t) {
+    const b = this.b;
+    // hunched, hands to face, trembling
+    this._lerpRot(b.chest, 0.35, 0, 0, 0.2);
+    this._lerpRot(b.l_upperarm, -1.2, 0, 0.6, 0.25);
+    this._lerpRot(b.r_upperarm, -1.2, 0, -0.6, 0.25);
+    this._lerpRot(b.l_lowerarm, -1.8, 0, 0, 0.25);
+    this._lerpRot(b.r_lowerarm, -1.8, 0, 0, 0.25);
+    this._lerpRot(b.head, 0.4, 0, 0, 0.2);
+    b.hips.position.x = Math.sin(t * 14) * 0.012;
+    b.hips.position.y = 0.9;
+    this.rig.setFace('shocked');
+  }
+
   _idle(t, dt) {
     const b = this.b;
-    b.hips.position.y = 0.92 + Math.sin(t * 1.2) * 0.05;
-    this._lerpRot(b.head, 0, Math.sin(t * 0.4) * 0.18, 0, 0.1);
-    this._lerpRot(b.l_upperarm, Math.sin(t * 0.8) * 0.06, 0, 0.16, 0.15);
-    this._lerpRot(b.r_upperarm, Math.sin(t * 0.8 + 1) * 0.06, 0, -0.16, 0.15);
-    this._lerpRot(b.chest, 0, 0, 0, 0.1);
+    // gentle breathing — slightly deeper than before, asymmetric inhale/exhale
+    const breath = Math.sin(t * 1.1);
+    b.hips.position.y = 0.92 + breath * 0.035;
+    // subtle weight shift left/right so the pose isn't perfectly symmetrical
+    b.hips.position.x = Math.sin(t * 0.5) * 0.015;
+    this._lerpRot(b.head, Math.sin(t * 0.7) * 0.05, Math.sin(t * 0.4) * 0.18, 0, 0.1);
+    // arms hang with a soft sway (offset phases, not mirrored)
+    this._lerpRot(b.l_upperarm, 0.05 + Math.sin(t * 0.8) * 0.05, 0, 0.14, 0.12);
+    this._lerpRot(b.r_upperarm, 0.05 + Math.sin(t * 0.8 + 0.6) * 0.05, 0, -0.14, 0.12);
+    this._lerpRot(b.chest, breath * 0.02, 0, 0, 0.1);
     this._lerpRot(b.l_upperleg, 0, 0, 0, 0.1); this._lerpRot(b.r_upperleg, 0, 0, 0, 0.1);
     b.hips.scale.lerp(_v1.set(1, 1, 1), 0.1);
     this.idleTimer += dt;
@@ -87,17 +175,38 @@ export class AnimationController {
   }
 
   _run(t) {
-    const b = this.b, cyc = 9 + this.speed * 6, amp = 0.85 + this.speed * 0.25;
-    this._lerpRot(b.l_upperleg, Math.sin(t * cyc) * amp, 0, 0, this.lerpK);
-    this._lerpRot(b.r_upperleg, -Math.sin(t * cyc) * amp, 0, 0, this.lerpK);
-    this._lerpRot(b.l_lowerleg, Math.max(0, Math.cos(t * cyc)) * 0.7, 0, 0, this.lerpK);
-    this._lerpRot(b.r_lowerleg, Math.max(0, -Math.cos(t * cyc)) * 0.7, 0, 0, this.lerpK);
-    this._lerpRot(b.l_upperarm, -Math.sin(t * cyc) * 1.1, 0, 0.12, this.lerpK);
-    this._lerpRot(b.r_upperarm, Math.sin(t * cyc) * 1.1, 0, -0.12, this.lerpK);
-    this._lerpRot(b.l_lowerarm, -0.5 + Math.sin(t * cyc) * 0.3, 0, 0, this.lerpK);
-    this._lerpRot(b.r_lowerarm, -0.5 - Math.sin(t * cyc) * 0.3, 0, 0, this.lerpK);
-    this._lerpRot(b.chest, -0.18, 0, 0, 0.2);
-    b.hips.position.y = 0.92 + Math.abs(Math.sin(t * cyc)) * 0.05;
+    const b = this.b;
+    const sp = this.speed || 0;
+    // cycle frequency + amplitude scale with speed (faster sprint = faster stride)
+    const cyc = 8.5 + sp * 6;
+    const amp = 0.7 + sp * 0.35;
+    const s = Math.sin(t * cyc), c = Math.cos(t * cyc);
+    // ---- BODY LEAN: chest pitches forward proportional to speed ----
+    // upright at idle, ~0.28 rad lean at full sprint (reads as momentum)
+    this._lerpRot(b.chest, -0.05 - sp * 0.28, 0, 0, 0.18);
+    this._lerpRot(b.hips, -sp * 0.06, 0, 0, 0.18);
+    // ---- VERTICAL BOB: double-lobe gait (heel-strike + toe-off) ----
+    // abs(sin) gives 2 bumps per cycle — natural asymmetric running bounce
+    const bob = Math.abs(s);
+    b.hips.position.y = 0.92 + bob * 0.085;
+    // ---- LATERAL SWAY: pelvis rocks side-to-side, opposite to stride ----
+    b.hips.position.x = c * 0.04;
+    // pelvis counter-rotates slightly against the shoulders (natural gait)
+    this._lerpRot(b.hips, -sp * 0.06, -c * 0.12 * sp, 0, 0.2);
+    // ---- LEGS: smooth sinusoidal swing, slight per-limb asymmetry ----
+    // (broke the perfect mirror by offsetting phase by a fraction)
+    this._lerpRot(b.l_upperleg, s * amp, 0, 0.04, this.lerpK);
+    this._lerpRot(b.r_upperleg, -s * amp, 0, -0.04, this.lerpK);
+    // knees bend smoothly on the back-swing (no sharp max(0,cos) snap)
+    this._lerpRot(b.l_lowerleg, Math.max(0, -c) * 0.9 + 0.1, 0, 0, this.lerpK);
+    this._lerpRot(b.r_lowerleg, Math.max(0, c) * 0.9 + 0.1, 0, 0, this.lerpK);
+    // ---- ARMS: counter-swing to legs, elbows bend naturally ----
+    this._lerpRot(b.l_upperarm, -s * (0.9 + sp * 0.3), 0, 0.14, this.lerpK);
+    this._lerpRot(b.r_upperarm, s * (0.9 + sp * 0.3), 0, -0.14, this.lerpK);
+    this._lerpRot(b.l_lowerarm, -0.6 + Math.max(0, -s) * 0.4, 0, 0, this.lerpK);
+    this._lerpRot(b.r_lowerarm, -0.6 + Math.max(0, s) * 0.4, 0, 0, this.lerpK);
+    // head looks slightly ahead in the travel direction
+    this._lerpRot(b.head, -sp * 0.12, 0, 0, 0.2);
     b.hips.scale.lerp(_v1.set(1, 1, 1), 0.2);
   }
 
@@ -128,6 +237,31 @@ export class AnimationController {
     this._lerpRot(b.r_upperleg, -Math.sin(t * 12) * 0.4, 0, -0.1, 0.2);
     this._lerpRot(b.head, -0.3, 0, 0, 0.15);
     b.hips.scale.lerp(_v1.set(1, 1, 1), 0.2);
+  }
+
+  /** Landing impact: squash on touchdown (hips compress, knees bend) then
+   *  recover to neutral over ~0.18s — gives weight to landings instead of
+   *  snapping straight to idle/run. */
+  _land(dt) {
+    this.landT += dt;
+    const b = this.b;
+    const p = this.landT;
+    if (p < 0.07) {
+      // impact squash: wider+shorter, knees bent, arms out for balance
+      b.hips.scale.lerp(_v1.set(1.18, 0.74, 1.18), 0.5);
+      this._lerpRot(b.l_upperleg, 0.5, 0, 0.05, 0.4);
+      this._lerpRot(b.r_upperleg, 0.5, 0, -0.05, 0.4);
+      this._lerpRot(b.l_lowerleg, 0.8, 0, 0, 0.4);
+      this._lerpRot(b.r_lowerleg, 0.8, 0, 0, 0.4);
+      this._lerpRot(b.l_upperarm, -0.6, 0, 0.3, 0.4);
+      this._lerpRot(b.r_upperarm, -0.6, 0, -0.3, 0.4);
+      this._lerpRot(b.chest, 0.15, 0, 0, 0.3);
+    } else {
+      // recover to neutral
+      b.hips.scale.lerp(_v1.set(1, 1, 1), 0.25);
+      this._resetPose(0.2);
+    }
+    if (p > 0.18) this.set('idle');
   }
 
   _initRagdoll() {

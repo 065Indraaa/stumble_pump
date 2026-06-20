@@ -18,18 +18,52 @@ export function gradientMap() {
 }
 
 // ---- material factories ----
-export function toonMat(color) { 
-  return new THREE.MeshStandardMaterial({ 
-    color, 
-    roughness: 0.2, 
-    metalness: 0.1 
-  }); 
+// The game's look is built on a PBR foundation (MeshStandardMaterial).
+// Lambert was previously used for all environment geometry, which produced a
+// flat matte look with no specular response. We now route every "lambertMat"
+// call through StandardMaterial with sensible per-color roughness so the
+// same call sites get real lighting without any level-file edits.
+
+// Roughness heuristic: wet/glossy palette colors (water, metal, polished
+// floor) get a lower roughness (more sheen); natural surfaces (grass, dirt,
+// rock, fabric) stay matte. This is keyed off the hex color so callers don't
+// need to change.
+function _roughForColor(color) {
+  const r = (color >> 16) & 0xff, g = (color >> 8) & 0xff, b = color & 0xff;
+  // bright/saturated "synthetic" colors (floor tiles, accents) → slight sheen
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const sat = max === 0 ? 0 : (max - min) / max;
+  if (sat > 0.45 && max > 120) return 0.45;   // glossy painted surface
+  // dark colors read as rock/metal → medium rough
+  if (max < 90) return 0.75;
+  // earthy greens/browns → matte
+  if (g >= r && g >= b && r > 40) return 0.92; // grass/foliage
+  if (r > g && r > b && g < 120) return 0.9;   // dirt/wood
+  return 0.8;                                   // default matte
 }
-export function lambertMat(color) { return new THREE.MeshLambertMaterial({ color }); }
+
+export function toonMat(color) {
+  return new THREE.MeshStandardMaterial({
+    color,
+    roughness: 0.55,
+    metalness: 0.05,
+  });
+}
+// lambertMat is the workhorse used by ~119 call sites. Upgraded from
+// MeshLambertMaterial (flat, no specular) to MeshStandardMaterial with a
+// color-aware roughness so surfaces respond to light/IBL naturally.
+export function lambertMat(color) {
+  return new THREE.MeshStandardMaterial({
+    color,
+    roughness: _roughForColor(color),
+    metalness: 0.0,
+  });
+}
 export function basicMat(color) { return new THREE.MeshBasicMaterial({ color }); }
 export function metalMat(color, metal = 0.9, rough = 0.15) {
   return new THREE.MeshStandardMaterial({ color, metalness: metal, roughness: rough });
 }
+// PBR preset factory — explicit control for hero props (trophy, lamp globes).
 export function pbrMat(color, opts = {}) {
   return new THREE.MeshStandardMaterial({
     color, metalness: opts.metal ?? 0.0, roughness: opts.rough ?? 0.7,
@@ -103,4 +137,25 @@ export function addOutline(mesh, thickness = 0.05) {
   m.raycast = () => {};
   mesh.add(m);
   return m;
+}
+
+// ---- soft radial contact-shadow texture (cached) ----
+// A blurred dark disc used as a fake ground-contact shadow under characters.
+// Much crisper than the directional shadow map at distance, and always present
+// so characters never look like they're floating.
+let _contactTex = null;
+export function contactShadowTexture() {
+  if (_contactTex) return _contactTex;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 128;
+  const cx = cv.getContext('2d');
+  const grad = cx.createRadialGradient(64, 64, 4, 64, 64, 62);
+  grad.addColorStop(0, 'rgba(0,0,0,0.55)');
+  grad.addColorStop(0.55, 'rgba(0,0,0,0.28)');
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  cx.fillStyle = grad;
+  cx.fillRect(0, 0, 128, 128);
+  _contactTex = new THREE.CanvasTexture(cv);
+  _contactTex.colorSpace = THREE.SRGBColorSpace;
+  return _contactTex;
 }

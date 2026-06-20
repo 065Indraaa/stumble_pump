@@ -16,13 +16,13 @@ import { addKinematicCapsule, removeBody, castRayDown } from '../core/PhysicsWor
 import { scene, MOBILE } from '../core/Engine.js';
 import { Input, readKeyboardMove } from '../core/InputManager.js';
 import { SFX } from '../core/AudioManager.js';
-import { spawnDust, spawnSpeedLines, FX } from '../core/FX.js';
+import { spawnDust, spawnSpeedLines, spawnSpeedStreaks, FX, spawnShockwave, spawnEmoteBurst } from '../core/FX.js';
 import {
   GRAVITY, MOVE_SPEED, ACCEL, FRICTION, JUMP_VELOCITY,
   DIVE_SPEED, DIVE_LOCK, COYOTE_TIME, JUMP_BUFFER, CHARACTER_RADIUS,
 } from '../config/constants.js';
 import { SKINS } from './skins.js';
-import { makeLabel } from '../core/AssetFactory.js';
+import { makeLabel, contactShadowTexture } from '../core/AssetFactory.js';
 
 const _wish = new THREE.Vector3();
 
@@ -67,6 +67,25 @@ export class Actor {
     })?.body;
 
     scene.add(this.root);
+
+    // Fake contact-shadow blob: a soft dark radial texture on a horizontal
+    // plane that sits on the ground directly under the character. It scales
+    // down + fades as the character rises (jump/fall), so they never look
+    // like they're floating. Cheaper and crisper than relying on the
+    // directional shadow map at distance.
+    const csMat = new THREE.MeshBasicMaterial({
+      map: contactShadowTexture(),
+      transparent: true,
+      opacity: 0.5,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -4,
+    });
+    this.contactShadow = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.6), csMat);
+    this.contactShadow.rotation.x = -Math.PI / 2;
+    this.contactShadow.position.y = 0.02;
+    this.contactShadow.renderOrder = -1;
+    scene.add(this.contactShadow);
   }
 
   startRagdoll(dir) {
@@ -111,11 +130,12 @@ export class Actor {
   }
 
   update(dt, t, ctx) {
-    if (this.parked) { this.anim.set('celebrate'); this.anim.update(dt, t); return; }
+    if (this.parked) { this.anim.set('celebrate'); this.anim.update(dt, t); this._updateContactShadow(ctx); return; }
     if (this.ragdoll) {
       this.ragdollCtrl.update(dt, ctx);
       this.anim.update(dt, t);
       this._syncBody();
+      this._updateContactShadow(ctx);
       return;
     }
     if (this.respawnStun > 0) this.respawnStun -= dt;
@@ -158,7 +178,7 @@ export class Actor {
       const f = new THREE.Vector3(Math.sin(this.facing), 0, Math.cos(this.facing));
       this.vel.x = f.x * DIVE_SPEED; this.vel.z = f.z * DIVE_SPEED;
       this.anim.set('dive');
-      if (this.isPlayer) spawnSpeedLines(this.pos, f);
+      if (this.isPlayer) { spawnSpeedLines(this.pos, f); spawnSpeedStreaks(this.pos, f); }
     }
 
     // horizontal movement — accelerate toward wish dir with smooth accel curve
@@ -170,12 +190,14 @@ export class Actor {
         const accelK = 1 - Math.exp(-ACCEL * dt);
         this.vel.x += (_wish.x * spd - this.vel.x) * accelK;
         this.vel.z += (_wish.z * spd - this.vel.z) * accelK;
-        // smooth turn toward desired facing (no instant snap)
+        // smooth turn toward desired facing — frame-rate-independent
+        // (exponential approach instead of linear slew, so it feels the
+        // same at 30/60/144fps and eases naturally into the new heading)
         const desiredFacing = Math.atan2(_wish.x, _wish.z);
         let delta = desiredFacing - this.facing;
         while (delta > Math.PI) delta -= Math.PI * 2;
         while (delta < -Math.PI) delta += Math.PI * 2;
-        this.facing += delta * Math.min(1, 10 * dt); // turn rate
+        this.facing += delta * (1 - Math.exp(-12 * dt));
       } else {
         const decay = Math.max(0, 1 - FRICTION * dt);
         this.vel.x *= decay; this.vel.z *= decay;
@@ -189,7 +211,16 @@ export class Actor {
     // ground collision via Rapier ray cast down (fallback to ctx.heightfn)
     const groundY = this._groundHeight(ctx);
     if (groundY !== null && this.pos.y <= groundY + 0.001) {
-      if (!this.grounded && this.vel.y < -4 && this.isPlayer) { spawnDust(new THREE.Vector3(this.pos.x, this.pos.y + 0.05, this.pos.z)); SFX.land(); }
+      const wasAirborne = !this.grounded;
+      const impactSpeed = this.vel.y;
+      if (wasAirborne && impactSpeed < -4) {
+        const impactPos = new THREE.Vector3(this.pos.x, this.pos.y + 0.05, this.pos.z);
+        if (this.isPlayer) { spawnDust(impactPos); SFX.land(); }
+        // shader shockwave on hard landings (visible even without shadow)
+        if (impactSpeed < -6) spawnShockwave(impactPos, 0xFFFFFF);
+        // hard landing → squash animation (weight + follow-through)
+        if (impactSpeed < -6) this.anim.set('land');
+      }
       this.pos.y = groundY; this.vel.y = 0; this.grounded = true;
       this.coyote = COYOTE_TIME;
       if (ctx.solidGroundAt) {
@@ -233,14 +264,30 @@ export class Actor {
     if (!this.ragdoll) { this.root.rotation.x = 0; this.root.rotation.z = 0; }
 
     // animation state selection
-    if (this.diveLock > 0) this.anim.set('dive');
+    // 'land' plays through its squash→recover before yielding to run/idle,
+    // so hard landings get visible weight instead of being overwritten.
+    if (this.anim.state === 'land') {
+      // keep the land animation until it finishes; allow dive override
+      if (this.diveLock > 0) this.anim.set('dive');
+    } else if (this.diveLock > 0) this.anim.set('dive');
     else if (!this.grounded) this.anim.set(this.vel.y < -1 ? 'fall' : 'jump');
     else if (moving) { this.anim.set('run'); this.anim.speed = Math.min(1, Math.hypot(this.vel.x, this.vel.z) / MOVE_SPEED); }
     else this.anim.set('idle');
 
-    // emote
-    if (this.isPlayer && Input.consumeEmote()) this.anim.set('celebrate');
-    if (this.anim.state === 'celebrate' && (moving || jumpReq)) this.anim.set('idle');
+    // emote — plays the chosen emote (keyboard E = equipped, wheel = specific)
+    if (this.isPlayer) {
+      const ek = Input.consumeEmote();
+      if (ek) {
+        const valid = ['dance', 'wave', 'taunt', 'point', 'flex', 'cry'];
+        const key = valid.includes(ek) ? ek : 'celebrate';
+        this.anim.set(key);
+        // shader burst above the head when an emote fires
+        spawnEmoteBurst(this.pos, key === 'cry' ? 0x60A5FA : 0xA3E635);
+      }
+    }
+    // any emote state cancels back to idle/run when the player moves or jumps
+    const isEmoting = ['celebrate', 'dance', 'wave', 'taunt', 'point', 'flex', 'cry'].includes(this.anim.state);
+    if (isEmoting && (moving || jumpReq)) this.anim.set('idle');
 
     // shiller rocket trail
     if (this.rig.skinKey === 'shiller' && this.anim.state === 'run' && FX.spark) {
@@ -257,6 +304,23 @@ export class Actor {
 
     this.anim.update(dt, t);
     this._syncBody();
+    this._updateContactShadow(ctx);
+  }
+
+  /** Position/scale/fade the contact-shadow blob under the character. */
+  _updateContactShadow(ctx) {
+    if (!this.contactShadow) return;
+    // ground height at current XZ (for placing the blob flush on the floor)
+    const gy = ctx.groundHeightAt ? ctx.groundHeightAt(this.pos.x, this.pos.z) : null;
+    const groundY = gy !== null ? gy : this.pos.y;
+    this.contactShadow.position.set(this.pos.x, groundY + 0.02, this.pos.z);
+    // height above ground → shrink + fade so jumps/falls read correctly
+    const h = Math.max(0, this.pos.y - groundY);
+    const s = Math.max(0.55, 1.0 - h * 0.06);
+    this.contactShadow.scale.set(s, s, 1);
+    this.contactShadow.material.opacity = Math.max(0.12, 0.5 - h * 0.03);
+    // hide entirely when falling far below the arena (out of world)
+    this.contactShadow.visible = gy !== null;
   }
 
   /** Resolve ground height: prefer Rapier ray cast; fall back to ctx.groundHeightAt. */
@@ -295,6 +359,11 @@ export class Actor {
   dispose() {
     if (this.body) { removeBody(this.body); this.body = null; }
     scene.remove(this.root);
+    if (this.contactShadow) {
+      scene.remove(this.contactShadow);
+      this.contactShadow.geometry.dispose();
+      this.contactShadow = null;
+    }
     this.rig.dispose();
   }
 }

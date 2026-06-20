@@ -199,8 +199,13 @@ export function buildLobby() {
     killY: -30,
     solidObstacles: [],
     groundHeightAt(x, z) {
-      // The whole circle is solid ground at Y=0
-      return (x * x + z * z < ARENA_R * ARENA_R) ? 0 : null;
+      // The whole circle is solid ground. The center hex pad (r<5.5) is a
+      // raised podium — return its top (PAD_H) so characters stand ON it,
+      // not clipping through it.
+      const r2 = x * x + z * z;
+      if (r2 > ARENA_R * ARENA_R) return null;
+      if (r2 < 5.5 * 5.5) return PAD_H;   // on the raised pad
+      return 0;                            // main floor
     },
     isWall(x, z) {
       return (x * x + z * z >= ARENA_R * ARENA_R);

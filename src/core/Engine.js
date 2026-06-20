@@ -2,10 +2,17 @@
 // STUMBLE PUMP — Engine
 // Owns the renderer, scene, camera, lights, resize handling,
 // clock, and the main animate loop driver.
-// Graphics are deliberately bright/cheerful (Stumble Guys style).
-// Post-processing is feature-flagged via quality setting.
+// AAA-quality rendering: PBR materials, IBL environment reflections,
+// player-following crisp shadows, contact shadows, and an
+// auto-detected post-processing pipeline (SSAO + subtle bloom).
 // ============================================================
 import * as THREE from 'three';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { SSAOPass } from 'three/examples/jsm/postprocessing/SSAOPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { CAM_FOV, isMobile, LS_QUALITY } from '../config/constants.js';
 import { step as physicsStep } from './PhysicsWorld.js';
 
@@ -24,7 +31,7 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+renderer.toneMappingExposure = 0.95;
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(CAM_FOV, window.innerWidth / window.innerHeight, 0.1, 800);
@@ -33,59 +40,133 @@ if (window.innerHeight > window.innerWidth) camera.fov = Math.min(82, CAM_FOV + 
 camera.position.set(0, 6, 12);
 camera.updateProjectionMatrix();
 
+// ---- Image-Based Lighting (IBL) ----
+// Generate a soft studio environment and assign it as scene.environment so
+// every MeshStandardMaterial gets real reflections + sky ambient. Slightly
+// dimmed so bright surfaces don't wash out (the envMap fills midtones, it
+// shouldn't blow out highlights).
+const pmrem = new THREE.PMREMGenerator(renderer);
+const envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environment = envTex;
+scene.environmentIntensity = 0.35;   // muted env fill (was default 1.0 → too bright)
+
 // ---- Lights: Bright, cheerful sunny day rig (Party Royale style) ----
-// World reads bright and colorful, no dark navy tints.
-const sun = new THREE.DirectionalLight(0xFFF4E0, 2.5);
+const sun = new THREE.DirectionalLight(0xFFF4E0, 2.6);
 sun.position.set(24, 40, 18);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
-sun.shadow.camera.near = 1; sun.shadow.camera.far = 180;
-sun.shadow.camera.left = -75; sun.shadow.camera.right = 75;
-sun.shadow.camera.top = 75; sun.shadow.camera.bottom = -75;
-sun.shadow.bias = -0.0002;
-sun.shadow.normalBias = 0.02;
+// Tighter frustum = crisper shadows. We reposition the sun + target each
+// frame to follow the player (see updateSunFollow), so a small frustum
+// covers the on-screen action at high resolution everywhere in the arena.
+sun.shadow.camera.near = 1; sun.shadow.camera.far = 120;
+sun.shadow.camera.left = -34; sun.shadow.camera.right = 34;
+sun.shadow.camera.top = 34; sun.shadow.camera.bottom = -34;
+sun.shadow.bias = -0.0003;
+sun.shadow.normalBias = 0.025;
 scene.add(sun); scene.add(sun.target);
 
-const ambient = new THREE.AmbientLight(0x88AAFF, 1.2);
+const ambient = new THREE.AmbientLight(0x88AAFF, 0.55);
 scene.add(ambient);
 
-const hemi = new THREE.HemisphereLight(0xFFFFFF, 0x4466AA, 1.0);
+const hemi = new THREE.HemisphereLight(0xFFFFFF, 0x4466AA, 0.85);
 scene.add(hemi);
 
 // rim light for character separation
-const rim = new THREE.DirectionalLight(0xFFEECC, 0.8);
+const rim = new THREE.DirectionalLight(0xFFEECC, 0.7);
 rim.position.set(-18, 14, -22);
 scene.add(rim);
 
+// ---- Player-following sun target (set externally by GameController) ----
+let _sunFollow = null;   // THREE.Vector3 the shadow rig follows
+export function setSunFollowTarget(v) { _sunFollow = v; }
+function updateSunFollow() {
+  if (!_sunFollow) return;
+  // keep the sun offset relative to the follow point so shadows stay crisp
+  sun.target.position.set(_sunFollow.x, 0, _sunFollow.z);
+  sun.position.set(_sunFollow.x + 24, 40, _sunFollow.z + 18);
+  sun.target.updateMatrixWorld();
+  sun.shadow.camera.updateProjectionMatrix();
+}
+
 const clock = new THREE.Clock();
 
-// ---- Post-processing: DISABLED (clean, bright, non-neon look) ----
-// The user prefers a clean bright look without bloom/glow on any page.
-// We keep no-op stubs so setQuality()/setBloom() don't break, but never
-// attach an EffectComposer. Rendering goes straight through renderer.render().
+// ---- Post-processing pipeline (auto-detected) ----
+// Full pipeline: RenderPass → SSAO (subtle ambient occlusion) → bloom (only
+// catches bright emissives) → OutputPass (tone map + color space).
+// Auto-detect: desktop always on; mobile on only if devicePixelRatio ≤ 2 and
+// a tiny render benchmark passes; otherwise PBR-only (no composer).
 let composer = null;
 let bloomPass = null;
+let ssaoPass = null;
 let POST_ON = false;
+let _ppAttempted = false;
 
-export async function initPostProcessing() { /* no-op — bloom disabled for clean look */ }
-export function disablePostProcessing() { composer = null; bloomPass = null; POST_ON = false; }
+function _deviceCanPostProcess() {
+  if (!MOBILE) return true;
+  // low-DPR phones (≤2) generally handle SSAO+bloom; very high DPR flagships
+  // often throttle, so we still cap there.
+  if (window.devicePixelRatio > 2) return false;
+  // quick benchmark: time a single heavy render; if > 22ms skip post-fx.
+  const t0 = performance.now();
+  renderer.render(scene, camera);
+  const ms = performance.now() - t0;
+  return ms < 22;
+}
 
-export function setBloom() { /* no-op — neon bloom intentionally disabled */ }
-export function isPostOn() { return false; }
+export async function initPostProcessing() {
+  if (_ppAttempted) return;       // only attempt once per session
+  _ppAttempted = true;
+  if (!_deviceCanPostProcess()) { POST_ON = false; return; }
+  try {
+    composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+    // SSAO — subtle, only darkens creases/contact areas. Output is the scene
+    // color so we feed it forward to bloom/output.
+    ssaoPass = new SSAOPass(scene, camera, window.innerWidth, window.innerHeight);
+    ssaoPass.kernelRadius = 8;
+    ssaoPass.minDistance = 0.002;
+    ssaoPass.maxDistance = 0.1;
+    composer.addPass(ssaoPass);
+    // Bloom — extremely subtle. Only truly bright emissives (lamp globes,
+    // lava, the trophy star) get a soft glow; normal bright surfaces must NOT
+    // bloom into white haze (that was the "smoke/putih" complaint). High
+    // threshold + low strength keeps the cheerful look crisp.
+    bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      0.12, // strength (very subtle — was 0.35, too much white haze)
+      0.4,  // radius (tighter)
+      0.95  // threshold (only near-white emissives bloom)
+    );
+    composer.addPass(bloomPass);
+    composer.addPass(new OutputPass());
+    composer.setSize(window.innerWidth, window.innerHeight);
+    composer.setPixelRatio(Math.min(window.devicePixelRatio, MOBILE ? 1.5 : 2));
+    POST_ON = true;
+  } catch (e) {
+    console.warn('[engine] post-processing init failed, falling back to PBR-only', e);
+    composer = null; POST_ON = false;
+  }
+}
+export function disablePostProcessing() {
+  composer = null; bloomPass = null; ssaoPass = null; POST_ON = false;
+}
+export function setBloom(strength) { if (bloomPass) bloomPass.strength = strength; }
+export function isPostOn() { return POST_ON; }
 
 
 // ---- resize ----
 window.addEventListener('resize', onResize);
 function onResize() {
   const portrait = window.innerHeight > window.innerWidth;
-  // On portrait phones widen the FOV slightly so more of the world is visible
-  // (avoids the player feeling "zoomed in" on a tall thin screen).
   camera.fov = portrait ? Math.min(82, CAM_FOV + 8) : CAM_FOV;
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, MOBILE ? 1.5 : 2));
-  if (composer) composer.setSize(window.innerWidth, window.innerHeight);
+  if (composer) {
+    composer.setSize(window.innerWidth, window.innerHeight);
+    if (ssaoPass) ssaoPass.setSize(window.innerWidth, window.innerHeight);
+  }
 }
 
 // ---- quality toggle ----
@@ -94,8 +175,8 @@ export function setQuality(q) {
   const high = q === 'high';
   renderer.shadowMap.enabled = high;
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, high ? 2 : 1));
-  if (high && !POST_ON) initPostProcessing();
-  if (!high) disablePostProcessing();
+  if (high) initPostProcessing();
+  else disablePostProcessing();
   if (composer) composer.setSize(window.innerWidth, window.innerHeight);
 }
 
@@ -113,6 +194,7 @@ function animate() {
   const dt = Math.min(0.05, clock.getDelta());
   const t = clock.elapsedTime;
   try { physicsStep(dt); } catch (e) { console.error('[physics] step error', e); }
+  updateSunFollow();
   if (frameCallback) {
     try { frameCallback(dt, t); }
     catch (e) {

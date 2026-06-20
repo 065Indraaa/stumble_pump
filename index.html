@@ -32,7 +32,10 @@
 <!-- LOADING — pump.fun degen terminal -->
 <div id="loading-screen">
   <div class="boot-chart" id="boot-chart"></div>
+  <!-- floating ambient emojis -->
+  <div class="boot-floats" id="boot-floats"></div>
   <div class="boot-logo-wrap">
+    <img id="boot-logo" src="/textures/logo.jpeg" alt="STUMBLE PUMP" />
   </div>
   <div class="boot-title">STUMBLE <span class="accent">PUMP</span></div>
   <div class="boot-subtitle">PARTY ROYALE · FUN ARENA</div>
@@ -110,11 +113,15 @@
       </div>
     </div>
 
-    <!-- CENTER: character preview (canvas behind) + skin name + big PLAY.
-         The 3D character is projected to the middle of the viewport by the
-         menu camera, so we keep this column minimal — skin-tag on top, PLAY
-         at the bottom — leaving the middle free for the character. -->
+    <!-- CENTER: hero treatment — logo banner + 3D character (canvas behind) +
+         skin name + big PLAY. The character is projected mid-viewport by the
+         menu camera, so the column stays airy top/bottom. -->
     <div id="menu-stage">
+      <div id="hero-brand">
+        <img src="/textures/logo.jpeg" alt="" id="hero-logo" />
+        <div class="hero-title">STUMBLE <span>PUMP</span></div>
+        <div class="hero-sub">PARTY ROYALE</div>
+      </div>
       <div id="skin-tag" class="glass-pill"><span class="st-dot"></span><span id="skin-name">THE SHILLER</span></div>
       <div id="play-stack">
         <button id="btn-play" class="nav-btn primary mega">PLAY</button>
@@ -126,10 +133,10 @@
     <div id="right-panel" class="glass-panel">
       <div class="panel-title">MAP ROTATION</div>
       <div id="map-rail-list">
-        <div class="map-card" data-bg="bonding"><div class="mc-ico bond"></div><div class="mc-info"><div class="mc-name">Bonding Curve Climb</div><div class="mc-type">RACE</div></div></div>
-        <div class="map-card" data-bg="rugpull"><div class="mc-ico rug"></div><div class="mc-info"><div class="mc-name">Rugpull Roulette</div><div class="mc-type">SURVIVAL</div></div></div>
-        <div class="map-card" data-bg="moon"><div class="mc-ico moon"></div><div class="mc-info"><div class="mc-name">Moon Mission</div><div class="mc-type">RACE</div></div></div>
-        <div class="map-card" data-bg="liquidation"><div class="mc-ico liq"></div><div class="mc-info"><div class="mc-name">Liquidation Lane</div><div class="mc-type">RACE</div></div></div>
+        <div class="map-card" data-bg="bonding"><div class="mc-ico">📈</div><div class="mc-info"><div class="mc-name">Bonding Curve Climb</div><div class="mc-type">RACE</div></div></div>
+        <div class="map-card" data-bg="rugpull"><div class="mc-ico">🎰</div><div class="mc-info"><div class="mc-name">Rugpull Roulette</div><div class="mc-type">SURVIVAL</div></div></div>
+        <div class="map-card" data-bg="moon"><div class="mc-ico">🌙</div><div class="mc-info"><div class="mc-name">Moon Mission</div><div class="mc-type">RACE</div></div></div>
+        <div class="map-card" data-bg="liquidation"><div class="mc-ico">🌋</div><div class="mc-info"><div class="mc-name">Liquidation Lane</div><div class="mc-type">RACE</div></div></div>
       </div>
       <div class="online-pill"><span class="on-dot"></span><span id="online-count">0</span> ONLINE</div>
     </div>
@@ -257,13 +264,17 @@
 <!-- ROULETTE -->
 <div id="roulette-ui" class="screen hidden">
   <div class="roulette-title">SELECTING MAP</div>
-  <div id="slot-machine">
-    <div class="slot-window">
-      <div class="slot-reel" id="reel"></div>
-      <div class="slot-marker"></div>
-    </div>
+  <div class="roulette-sub">Spinning the degen wheel…</div>
+  <!-- 3D card carousel: maps orbit in 3D, the winner zooms forward -->
+  <div class="rc-stage">
+    <div class="rc-track" id="rc-track"></div>
+    <div class="rc-spotlight"></div>
   </div>
-  <div id="round-announce" class="hidden"><span id="round-label">ROUND 1</span><span id="map-label">BONDING CURVE CLIMB</span></div>
+  <div id="round-announce" class="hidden">
+    <span id="round-label">ROUND 1</span>
+    <span id="map-label">BONDING CURVE CLIMB</span>
+    <span class="ra-go">GET READY!</span>
+  </div>
 </div>
 
 <!-- MATCH HUD -->
@@ -287,10 +298,17 @@
   <div id="mobile-controls" class="hidden">
     <div id="joystick"><div id="joy-knob"></div></div>
     <div id="action-buttons">
-      <button id="btn-emote" class="action-btn small">EMOTE</button>
+      <button id="btn-emote" class="action-btn small" title="Tap = emote, hold = wheel">😎</button>
       <button id="btn-dive" class="action-btn">DIVE</button>
       <button id="btn-jump" class="action-btn big">JUMP</button>
     </div>
+  </div>
+
+  <!-- EMOTE WHEEL (radial picker; quick-tap default lives on the button) -->
+  <div id="emote-wheel" class="hidden">
+    <div class="ew-backdrop"></div>
+    <div class="ew-ring" id="ew-ring"></div>
+    <div class="ew-hint">Pick an emote</div>
   </div>
 </div>
 

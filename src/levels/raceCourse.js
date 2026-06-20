@@ -14,7 +14,7 @@ import { scene, renderer, camera } from '../core/Engine.js';
 import { lambertMat, basicMat, makeBillboard } from '../core/AssetFactory.js';
 import {
   clearScene, make3DClouds, makeFloatingIslands, make3DTileFloor,
-  makeTree, makeBush, makeRock, makeHillsRing,
+  makeTree, makeBush, makeRock, makeHillsRing, spawnGrid,
 } from './env.js';
 import { makeRedCandle, updateRedCandle } from '../entities/RedCandle.js';
 import { makeGreenTrampoline, updateGreenTrampoline, BOUNCE_VELOCITY } from '../entities/GreenTrampoline.js';
@@ -27,46 +27,76 @@ import { SP_PALETTE } from '../config/constants.js';
 
 export function buildRaceCourse(cfg) {
   clearScene();
-  renderer.setClearColor(SP_PALETTE.sky);
-  scene.fog = new THREE.Fog(SP_PALETTE.fog, 90, 300);
+  // Theme colors: each level (Bonding/Moon/Liquidation) supplies its own sky,
+  // fog and world palette so the arena reads as the intended environment —
+  // not always the green grass default.
+  const SKY = cfg.clear ?? SP_PALETTE.sky;
+  const FOG = cfg.fog ?? SP_PALETTE.fog;
+  const TERRAIN = cfg.terrainColor ?? SP_PALETTE.terrain;
+  const EDGE = cfg.edgeColor ?? SP_PALETTE.edge;
+  const GRID = cfg.gridColor ?? SP_PALETTE.floor2;
+  const backdrop = cfg.backdrop || 'bonding';
+  renderer.setClearColor(SKY);
+  scene.fog = new THREE.Fog(FOG, 90, 300);
   const group = new THREE.Group();
   scene.add(group);
   const L = cfg.L, W = cfg.W, H = cfg.H;
   const heightFn = (z) => cfg.heightFn(THREE.MathUtils.clamp(z, 0, L));
 
-  // 3D Procedural Sky Elements
-  group.add(make3DClouds(40, 200, 50));
-  group.add(makeFloatingIslands(15, 180));
+  // 3D Procedural Sky Elements — backdrop-aware so a space map doesn't get
+  // fluffy white clouds and a lava map doesn't get green floating islands.
+  if (backdrop === 'moon') {
+    // dark space: distant stars only (no clouds, no islands)
+    const starGeo = new THREE.SphereGeometry(0.6, 5, 4);
+    const starMat = basicMat(0xFFFFFF);
+    const starInst = new THREE.InstancedMesh(starGeo, starMat, 160);
+    const m4 = new THREE.Matrix4();
+    for (let s = 0; s < 160; s++) {
+      m4.makeTranslation((Math.random() - 0.5) * 500, 30 + Math.random() * 120, Math.random() * L);
+      starInst.setMatrixAt(s, m4);
+    }
+    starInst.instanceMatrix.needsUpdate = true;
+    group.add(starInst);
+  } else if (backdrop === 'liquidation') {
+    // smoky hellscape: dark drifting embers + sparse dark clouds
+    group.add(make3DClouds(8, 220, 60));
+  } else {
+    // default grass world: cheerful clouds + floating islands
+    group.add(make3DClouds(40, 200, 50));
+    group.add(makeFloatingIslands(15, 180));
+  }
 
   // 3D Tile Floor for the main race track (with pits)
-  const floor = make3DTileFloor(W, L, 4, heightFn, SP_PALETTE.floor1, SP_PALETTE.floor2, cfg.pits || []);
+  const floor = make3DTileFloor(W, L, 4, heightFn, SP_PALETTE.floor1, GRID, cfg.pits || []);
   group.add(floor);
 
-  // lane stripes down the center of the track (so floor reads as a "road")
-  const stripeMat = lambertMat(SP_PALETTE.edge);
+  // lane stripes down the center of the track
+  const stripeMat = lambertMat(EDGE);
   for (let z = 4; z < L; z += 8) {
     const s = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.06, 3), stripeMat);
     s.position.set(0, heightFn(z) + 0.04, z); group.add(s);
   }
 
-  // side walls
+  // side walls (theme-coloured so each map reads distinctly)
   for (const sx of [-1, 1]) {
     const wallH = 8;
-    const wall = new THREE.Mesh(new THREE.BoxGeometry(1.5, wallH, L), lambertMat(SP_PALETTE.terrain));
+    const wall = new THREE.Mesh(new THREE.BoxGeometry(1.5, wallH, L), lambertMat(TERRAIN));
     wall.position.set(sx * (W + 0.5), heightFn(L * 0.5) + wallH * 0.5 - 2, L / 2);
     wall.castShadow = true; wall.receiveShadow = true; group.add(wall);
-    const edge = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, L), lambertMat(SP_PALETTE.edge));
+    const edge = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, L), lambertMat(EDGE));
     edge.position.set(sx * (W + 0.5), heightFn(L * 0.5) + wallH - 2, L / 2); group.add(edge);
     for (let z = 4; z < L; z += 12) {
-      const p = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 2.4, 6), lambertMat(SP_PALETTE.edge));
+      const p = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 2.4, 6), lambertMat(EDGE));
       p.position.set(sx * (W + 0.5), heightFn(z) + 1.2, z); group.add(p);
     }
   }
-  // ---- Ground world under/around the track ----
-  // A smooth grass ribbon that follows the track height curve (so the track
-  // reads as an elevated road on real terrain), built as a displaced plane so
-  // it never staircases on slopes. Track top = heightFn(z); grass top sits
-  // 1 unit below it so the platform edge reads clearly.
+
+  // ---- Ground world under/around the track (backdrop-specific) ----
+  // Always a displaced plane following the track height curve (no staircase),
+  // but the surface material + scattered decor change per theme:
+  //   bonding → grass + trees + bushes + hills
+  //   moon    → grey regolith + craters + rocks (no hills)
+  //   liquidation → dark rock + lava cracks + ember pits
   const GRASS_DROP = 1.0;
   const GROUND_HALF_W = W + 16;
   const grassGeo = new THREE.PlaneGeometry(GROUND_HALF_W * 2, L + 8, 2, Math.max(8, Math.round(L / 6)));
@@ -74,64 +104,87 @@ export function buildRaceCourse(cfg) {
   {
     const p = grassGeo.attributes.position;
     for (let i = 0; i < p.count; i++) {
-      const zw = p.getZ(i) + (L + 8) / 2;            // map plane -L/2..L/2 → 0..L
+      const zw = p.getZ(i) + (L + 8) / 2;
       const zc = THREE.MathUtils.clamp(zw, 0, L);
       p.setY(i, heightFn(zc) - GRASS_DROP);
     }
     p.needsUpdate = true;
     grassGeo.computeVertexNormals();
   }
-  const grassMesh = new THREE.Mesh(grassGeo, lambertMat(SP_PALETTE.terrain));
-  grassMesh.position.z = (L + 8) / 2;                 // shift so ribbon spans 0..L
+  const surfaceMat = backdrop === 'moon' ? lambertMat(0x4A4A5A)
+    : backdrop === 'liquidation' ? lambertMat(0x2A1414)
+    : lambertMat(TERRAIN);
+  const grassMesh = new THREE.Mesh(grassGeo, surfaceMat);
+  grassMesh.position.z = (L + 8) / 2;
   grassMesh.receiveShadow = true;
   group.add(grassMesh);
 
-  // Solid dark floor far below as a safety backdrop (catches any view-through)
+  // Solid dark floor far below as a safety backdrop (theme-coloured)
   const underGeo = new THREE.PlaneGeometry(GROUND_HALF_W * 2 + 60, L + 60);
   underGeo.rotateX(-Math.PI / 2);
-  const underFloor = new THREE.Mesh(underGeo, lambertMat(SP_PALETTE.dirt));
+  const underFloor = new THREE.Mesh(underGeo, lambertMat(backdrop === 'moon' ? 0x0B0C1A : backdrop === 'liquidation' ? 0x180404 : SP_PALETTE.dirt));
   underFloor.position.set(0, heightFn(L * 0.5) - 14, L / 2);
   underFloor.receiveShadow = true;
   group.add(underFloor);
 
-  // ---- Forest scattered along both sides of the track (no empty grass) ----
-  // Deterministic positions so layout is stable; trees sit ON the grass
-  // surface (heightFn(z) - GRASS_DROP), never sunk into it.
-  let _seed = 9753;
-  const _rnd = () => { _seed = (_seed * 1103515245 + 12345) & 0x7fffffff; return _seed / 0x7fffffff; };
-  const treeCols = [SP_PALETTE.terrain, 0x4FAE6A, 0x6BCB95, SP_PALETTE.terrain];
+  // ---- Backdrop-specific scattered decor ----
   const groundY = (z) => heightFn(THREE.MathUtils.clamp(z, 0, L)) - GRASS_DROP;
-  for (let z = 12; z < L; z += 18) {
-    for (const sx of [-1, 1]) {
-      if (_rnd() < 0.7) {
-        const x = sx * (W + 4 + _rnd() * 8);
-        const sc = 0.9 + _rnd() * 0.8;
-        const tree = makeTree(x, z, sc, treeCols[Math.floor(z / 18) % treeCols.length]);
-        tree.position.y = groundY(z);
-        group.add(tree);
-      } else {
-        const x = sx * (W + 4 + _rnd() * 6);
-        const sc = 0.7 + _rnd() * 0.5;
-        const b = makeBush(x, z, sc, treeCols[Math.floor(z / 18) % treeCols.length]);
-        b.position.y = groundY(z);
-        group.add(b);
+  if (backdrop === 'moon') {
+    // craters + moon rocks along both sides
+    for (let z = 12; z < L; z += 22) {
+      for (const sx of [-1, 1]) {
+        const x = sx * (W + 5 + (z % 8));
+        const cy = groundY(z);
+        const crater = new THREE.Mesh(new THREE.CylinderGeometry(2.5, 2.3, 0.4, 10), lambertMat(0x353545));
+        crater.position.set(x, cy + 0.2, z); crater.receiveShadow = true; group.add(crater);
+        const rock = makeRock(x, z, 0.8 + (z % 5) * 0.15, 0x6A6A7A);
+        rock.position.y = cy; group.add(rock);
       }
     }
+  } else if (backdrop === 'liquidation') {
+    // glowing lava cracks + ember pits along both sides
+    for (let z = 12; z < L; z += 16) {
+      for (const sx of [-1, 1]) {
+        const x = sx * (W + 5 + (z % 6));
+        const cy = groundY(z);
+        const pit = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.6, 0.5, 10), lambertMat(0x4A1010));
+        pit.position.set(x, cy + 0.2, z); pit.receiveShadow = true; group.add(pit);
+        const ember = new THREE.Mesh(new THREE.CircleGeometry(1.1, 10), basicMat(0xFF5500));
+        ember.rotation.x = -Math.PI / 2; ember.position.set(x, cy + 0.46, z); group.add(ember);
+      }
+    }
+  } else {
+    // default grass world: trees + bushes + rocks + distant hills
+    let _seed = 9753;
+    const _rnd = () => { _seed = (_seed * 1103515245 + 12345) & 0x7fffffff; return _seed / 0x7fffffff; };
+    const treeCols = [TERRAIN, 0x4FAE6A, 0x6BCB95, TERRAIN];
+    for (let z = 12; z < L; z += 18) {
+      for (const sx of [-1, 1]) {
+        if (_rnd() < 0.7) {
+          const x = sx * (W + 4 + _rnd() * 8);
+          const sc = 0.9 + _rnd() * 0.8;
+          const tree = makeTree(x, z, sc, treeCols[Math.floor(z / 18) % treeCols.length]);
+          tree.position.y = groundY(z); group.add(tree);
+        } else {
+          const x = sx * (W + 4 + _rnd() * 6);
+          const sc = 0.7 + _rnd() * 0.5;
+          const b = makeBush(x, z, sc, treeCols[Math.floor(z / 18) % treeCols.length]);
+          b.position.y = groundY(z); group.add(b);
+        }
+      }
+    }
+    for (let i = 0; i < 10; i++) {
+      const z = (_seed = (_seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff * L;
+      const sx = (_seed = (_seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff < 0.5 ? -1 : 1;
+      const x = sx * (W + 5 + ((_seed = (_seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff) * 10);
+      const sc = 0.7 + ((_seed = (_seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff) * 0.9;
+      const r = makeRock(x, z, sc, [0x9AA0AA, 0xB0B6C0, 0x8C909A][i % 3]);
+      r.position.y = groundY(z); group.add(r);
+    }
+    const hills = makeHillsRing(95, 18);
+    hills.position.set(0, 0, L / 2);
+    group.add(hills);
   }
-  for (let i = 0; i < 10; i++) {
-    const z = _rnd() * L;
-    const sx = _rnd() < 0.5 ? -1 : 1;
-    const x = sx * (W + 5 + _rnd() * 10);
-    const sc = 0.7 + _rnd() * 0.9;
-    const r = makeRock(x, z, sc, [0x9AA0AA, 0xB0B6C0, 0x8C909A][i % 3]);
-    r.position.y = groundY(z);
-    group.add(r);
-  }
-
-  // ---- Distant rolling hills ring around the whole track ----
-  const hills = makeHillsRing(95, 18);
-  hills.position.set(0, 0, L / 2);
-  group.add(hills);
 
   // Per-level themed decor (each level supplies its own unique elements)
   if (typeof cfg.buildDecor === 'function') {

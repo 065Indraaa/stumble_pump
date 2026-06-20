@@ -15,7 +15,7 @@ function saveUsers(u) { localStorage.setItem(LS_USERS, JSON.stringify(u)); }
 function newProfile(name) {
   return {
     name, level: 1, coins: 500, gems: 10,
-    skin: 'shiller', emote: 'moon', trail: 'rocket',
+    skin: 'shiller', emote: 'dance', trail: 'rocket',
     wins: 0, games: 0, guest: false, solana: '',
     ownedSkins: ['shiller', 'devsus', 'trojan', 'paperhand'],
   };

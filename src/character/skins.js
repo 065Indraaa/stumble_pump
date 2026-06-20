@@ -23,10 +23,12 @@ export const SKINS = {
 };
 
 export const EMOTES = [
-  { k: 'moon',    n: 'MOON POINT',   e: '🌙', r: 'common' },
-  { k: 'rug',     n: 'RUG DANCE',    e: '🪅', r: 'rare' },
-  { k: 'hodl',    n: 'HODL STANCE',  e: '💎', r: 'epic' },
-  { k: 'escape',  n: 'DEV ESCAPE',   e: '🏃', r: 'legendary' },
+  { k: 'dance',   n: 'DANCE',     e: '🕺', r: 'common' },
+  { k: 'wave',    n: 'WAVE',      e: '👋', r: 'common' },
+  { k: 'taunt',   n: 'TAUNT',     e: '😤', r: 'rare' },
+  { k: 'point',   n: 'POINT',     e: '👉', r: 'rare' },
+  { k: 'flex',    n: 'FLEX',      e: '💪', r: 'epic' },
+  { k: 'cry',     n: 'CRY',       e: '😭', r: 'legendary' },
 ];
 
 export const TRAILS = [

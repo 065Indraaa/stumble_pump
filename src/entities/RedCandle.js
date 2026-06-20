@@ -45,7 +45,7 @@ export function makeRedCandle(x, y, z) {
   const flameMat = new THREE.MeshStandardMaterial({
     color: 0xFFD23F,
     emissive: 0xFF8A3D,
-    emissiveIntensity: 1.5,
+    emissiveIntensity: 0.7,
     transparent: true,
     opacity: 0.9
   });

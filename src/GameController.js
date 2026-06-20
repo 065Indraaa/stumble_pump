@@ -6,9 +6,10 @@
 // and drives camera + HUD per mode.
 // ============================================================
 import * as THREE from 'three';
-import { scene, renderer, camera, shakeCamera, tickCamShake, MOBILE } from './core/Engine.js';
+import { scene, renderer, camera, shakeCamera, tickCamShake, setSunFollowTarget, MOBILE } from './core/Engine.js';
 import { initFX, updateFX, spawnConfettiBurst } from './core/FX.js';
 import { SFX, startAmbient, stopAmbient, isMuted, setMute as setAudioMute } from './core/AudioManager.js';
+import { setMusicMode, stopMusic } from './core/MusicManager.js';
 import { state as G, register, showScreen, setMode, tick as smTick, disposeActors, disposeMap } from './core/SceneManager.js';
 import { Input } from './core/InputManager.js';
 import { Net } from './net/NetManager.js';
@@ -18,7 +19,7 @@ import { History } from './store/history.js';
 import { Actor } from './character/Actor.js';
 import { spawnBot } from './character/BotController.js';
 import { SKINS, EMOTES, TRAILS } from './character/skins.js';
-import { lambertMat } from './core/AssetFactory.js';
+import { lambertMat, metalMat, pbrMat } from './core/AssetFactory.js';
 import { clearScene, make3DClouds, makeFloatingIslands, makeGroundDisc, makeHillsRing, makeForestScatter, makeBannerArch } from './levels/env.js';
 import { MOVE_SPEED, SP_PALETTE } from './config/constants.js';
 
@@ -29,16 +30,16 @@ import { buildLiquidationLane } from './levels/liquidationLane.js';
 import { buildRugpull } from './levels/rugpullRoulette.js';
 
 const MAPS = [
-  { name: 'BONDING CURVE CLIMB', type: 'RACE', build: buildBondingCurve, goal: 'First 16 to climb the curve qualify', tip: 'Dodge red candles · bounce green pads · jump the sweepers' },
-  { name: 'RUGPULL ROULETTE', type: 'SURVIVAL', build: buildRugpull, goal: "Survive 60 seconds — don't fall when platforms rug", tip: 'Platforms flash red before they drop. Grab coins!' },
-  { name: 'MOON MISSION', type: 'RACE', build: buildMoonMission, goal: 'First 16 to reach the moon qualify', tip: 'Jump the gaps · ride the movers · time the wrecking balls' },
-  { name: 'LIQUIDATION LANE', type: 'RACE', build: buildLiquidationLane, goal: 'First 16 down the canyon survive', tip: "Don't fall in the lava · hop the green platforms" },
+  { name: 'BONDING CURVE CLIMB', type: 'RACE', icon: '📈', build: buildBondingCurve, goal: 'First 16 to climb the curve qualify', tip: 'Dodge red candles · bounce green pads · jump the sweepers' },
+  { name: 'RUGPULL ROULETTE', type: 'SURVIVAL', icon: '🎰', build: buildRugpull, goal: "Survive 60 seconds — don't fall when platforms rug", tip: 'Platforms flash red before they drop. Grab coins!' },
+  { name: 'MOON MISSION', type: 'RACE', icon: '🌙', build: buildMoonMission, goal: 'First 16 to reach the moon qualify', tip: 'Jump the gaps · ride the movers · time the wrecking balls' },
+  { name: 'LIQUIDATION LANE', type: 'RACE', icon: '🌋', build: buildLiquidationLane, goal: 'First 16 down the canyon survive', tip: "Don't fall in the lava · hop the green platforms" },
 ];
 
 export const shared = {
   user: null,
   selectedSkin: 'shiller',
-  selectedEmote: 'moon',
+  selectedEmote: 'dance',
   selectedTrail: 'rocket',
   round: 1,
 };
@@ -48,6 +49,9 @@ let roomPollInterval = null;
 
 const _camTarget = new THREE.Vector3();
 const _v1 = new THREE.Vector3();
+const _originVec = new THREE.Vector3(0, 0, 0);
+// low-pass-smoothed velocity for jitter-free camera look-ahead
+let _smoothVx = 0, _smoothVz = 0;
 
 // Walk the preview stage group and call any userData.update(t) hooks so
 // clouds/islands in the menu/customize backdrop keep drifting.
@@ -64,8 +68,9 @@ export function applyProfile(prof) {
   shared.user = prof;
   if (!Array.isArray(prof.ownedSkins)) prof.ownedSkins = ['shiller', 'devsus', 'trojan', 'paperhand'];
   shared.selectedSkin = prof.skin || 'shiller';
-  shared.selectedEmote = prof.emote || 'moon';
+  shared.selectedEmote = prof.emote || 'dance';
   shared.selectedTrail = prof.trail || 'rocket';
+  window.__spEquippedEmote = shared.selectedEmote;   // keyboard E + quick-tap read this
   updateTopBar();
 }
 
@@ -166,12 +171,15 @@ function buildPreview() {
     );
     capital.position.set(cx, 5.35, cz); group.add(capital);
 
-    // Lamp globe on top
+    // Lamp globe on top — subtle emissive (warm tint, not a blown-out white blob)
     const lamp = new THREE.Mesh(
-      new THREE.SphereGeometry(0.55, 12, 10),
-      new THREE.MeshLambertMaterial({ color: 0xFFFADD })
+      new THREE.SphereGeometry(0.55, 16, 14),
+      pbrMat(0xFFF6E0, { emissive: 0xFFD98A, emissiveIntensity: 0.5, rough: 0.4 })
     );
     lamp.position.set(cx, 6.1, cz); group.add(lamp);
+    // a small point light so the lamp actually illuminates the column below it
+    const lampLight = new THREE.PointLight(0xFFEEAA, 0.6, 14, 2);
+    lampLight.position.set(cx, 6.0, cz); group.add(lampLight);
   }
 
   // ── TWO CHEERFUL BANNER ARCHES flanking the stage ──────────────────
@@ -184,56 +192,67 @@ function buildPreview() {
   group.add(archR);
 
   // ── TROPHY / CHAMPION CUP (to the right of character) ─────────────
+  // Polished gold: real metalness so it catches the IBL environment and shines.
+  const GOLD = metalMat(0xFFD23F, 0.95, 0.18);
+  const GOLD_DK = metalMat(0xCC9A1A, 0.92, 0.28);
   const trophyGroup = new THREE.Group();
   trophyGroup.position.set(5, STAGE_TOP_Y, -2);
   group.add(trophyGroup);
 
   // Cup body
-  const cupBody = new THREE.Mesh(
-    new THREE.CylinderGeometry(1.4, 0.8, 3, 12),
-    new THREE.MeshLambertMaterial({ color: SP_PALETTE.floor2 })
-  );
+  const cupBody = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 0.8, 3, 16), GOLD);
   cupBody.position.y = 1.5; cupBody.castShadow = true; trophyGroup.add(cupBody);
 
   // Cup mouth (wider top)
-  const cupMouth = new THREE.Mesh(
-    new THREE.CylinderGeometry(1.7, 1.4, 0.5, 12),
-    new THREE.MeshLambertMaterial({ color: SP_PALETTE.floor2 })
-  );
+  const cupMouth = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 1.4, 0.5, 16), GOLD);
   cupMouth.position.y = 3.25; trophyGroup.add(cupMouth);
 
   // Cup base
-  const cupBase = new THREE.Mesh(
-    new THREE.CylinderGeometry(1.2, 1.4, 0.5, 12),
-    new THREE.MeshLambertMaterial({ color: SP_PALETTE.edge })
-  );
+  const cupBase = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.4, 0.5, 16), GOLD_DK);
   cupBase.position.y = 0.25; trophyGroup.add(cupBase);
 
   // Cup handles (half-torus each side)
   for (const sx of [-1, 1]) {
     const handle = new THREE.Mesh(
-      new THREE.TorusGeometry(0.7, 0.12, 6, 8, Math.PI),
-      new THREE.MeshLambertMaterial({ color: SP_PALETTE.floor2 })
+      new THREE.TorusGeometry(0.7, 0.12, 8, 12, Math.PI),
+      GOLD
     );
     handle.position.set(sx * 1.9, 1.8, 0);
     handle.rotation.z = sx * Math.PI / 2;
     trophyGroup.add(handle);
   }
 
-  // Star on top of cup
+  // Star on top of cup — emissive gold so it glows
   const starSphere = new THREE.Mesh(
     new THREE.OctahedronGeometry(0.5, 0),
-    new THREE.MeshLambertMaterial({ color: SP_PALETTE.floor2 })
+    pbrMat(0xFFD23F, { metal: 0.9, rough: 0.15, emissive: 0xFFAA00, emissiveIntensity: 0.25 })
   );
   starSphere.position.y = 4; trophyGroup.add(starSphere);
 
-  // ── PUMP PEDESTAL TEXT PLATE ───────────────────────────────────────
+  // ── PUMP PEDESTAL TEXT PLATE — real canvas-textured label ──────────
   const textPlate = new THREE.Mesh(
     new THREE.BoxGeometry(4.5, 0.8, 0.3),
-    new THREE.MeshLambertMaterial({ color: SP_PALETTE.terrain })
+    metalMat(SP_PALETTE.terrain, 0.3, 0.5)
   );
   textPlate.position.set(0, -1.6, 3.2);
   group.add(textPlate);
+  // canvas-text label on the front face
+  const labelCv = document.createElement('canvas');
+  labelCv.width = 512; labelCv.height = 96;
+  const lcx = labelCv.getContext('2d');
+  lcx.font = "bold 64px 'Fredoka One', sans-serif";
+  lcx.textAlign = 'center'; lcx.textBaseline = 'middle';
+  lcx.lineWidth = 10; lcx.strokeStyle = '#0a3a1a';
+  lcx.strokeText('CHAMPION', 256, 48);
+  lcx.fillStyle = '#FFFFFF'; lcx.fillText('CHAMPION', 256, 48);
+  const labelTex = new THREE.CanvasTexture(labelCv);
+  labelTex.colorSpace = THREE.SRGBColorSpace;
+  const label = new THREE.Mesh(
+    new THREE.PlaneGeometry(4.2, 0.7),
+    new THREE.MeshBasicMaterial({ map: labelTex, transparent: true })
+  );
+  label.position.set(0, -1.6, 3.36);
+  group.add(label);
 
   if (G.preview) { G.preview.dispose(); }
   G.preview = new Actor(shared.selectedSkin, true, 'player');
@@ -244,7 +263,8 @@ function buildPreview() {
 }
 
 export function enterMenu() {
-  stopAmbient(); startAmbient();
+  stopAmbient();
+  setMusicMode('menu');   // chill menu/lobby theme
   disposeActors(); disposeMap();
   buildPreview();
   showScreen('main-menu');
@@ -264,6 +284,7 @@ export function enterCustomize() {
 // ============================================================
 export function enterLobby() {
   disposeActors(); disposeMap();
+  setMusicMode('match');   // energetic gameplay theme starts in lobby
   G.map = buildLobby();
   // Preserve room-match flags (set by startRoomMatch / btn-play) across the
   // G.data reset below — previously these were wiped, which broke room matches.
@@ -279,7 +300,8 @@ export function enterLobby() {
     G._specTimer = 0;
   } else {
     G.player = new Actor(shared.selectedSkin, true, 'player');
-    G.player.pos.set(0, 2, 0);
+    // spawn just above the center pad (which is raised to PAD_H=0.35)
+    G.player.pos.set(0, 1.5, 0);
     G.player.checkpoint.copy(G.player.pos);
     G.actors = [G.player];
   }
@@ -459,26 +481,45 @@ function enterRoulette() {
   disposeActors(); disposeMap();
   showScreen('roulette-ui');
   document.getElementById('round-announce').classList.add('hidden');
-  const reel = document.getElementById('reel'); reel.innerHTML = '';
   const pick = Math.floor(Math.random() * MAPS.length);
   G.data = { isRoomMatch, isHostSpectator, roomRounds, fieldSize };
   G.data.pickedMap = MAPS[pick];
-  const seq = [];
-  for (let i = 0; i < 24; i++) seq.push(MAPS[Math.floor(Math.random() * MAPS.length)]);
-  seq.push(MAPS[pick]);
-  seq.forEach((m) => {
-    const c = document.createElement('div'); c.className = 'slot-card';
-    c.innerHTML = `<div class="sc-name">${m.name}</div><div class="sc-type">${m.type}</div>`;
-    reel.appendChild(c);
-  });
-  const cardH = 150, finalY = -(seq.length - 1) * cardH;
-  reel.style.transition = 'none'; reel.style.transform = 'translateY(0)';
-  SFX.spin();
-  requestAnimationFrame(() => requestAnimationFrame(() => {
-    reel.style.transition = 'transform 3.4s cubic-bezier(.12,.78,.18,1)';
-    reel.style.transform = `translateY(${finalY}px)`;
-  }));
-  G.data.announceAt = 3.6; G.data.startedMatch = false;
+
+  // ---- 3D card carousel: arrange map cards in a ring (rotateY), spin many
+  // turns, then settle so the picked card lands at the front (0°). ----
+  const track = document.getElementById('rc-track');
+  if (track) {
+    track.innerHTML = '';
+    // card colors per map for variety
+    const cardColors = ['#5FCB88', '#4F8CFF', '#A77BFF', '#FF8A3D', '#FFD23F', '#FF5CA8'];
+    const stepAngle = 360 / MAPS.length;
+    const radius = 180; // ring radius in px
+    MAPS.forEach((m, i) => {
+      const card = document.createElement('div');
+      card.className = 'rc-card';
+      card.style.background = `linear-gradient(160deg, ${cardColors[i % cardColors.length]}, rgba(0,0,0,0.4))`;
+      card.style.transform = `rotateY(${i * stepAngle}deg) translateZ(${radius}px)`;
+      card.dataset.idx = i;
+      card.innerHTML = `<div class="rc-ico">${m.icon || '🗺️'}</div><div class="rc-name">${m.name}</div><div class="rc-type">${m.type || 'RACE'}</div>`;
+      track.appendChild(card);
+    });
+    // spin: 6 full turns + land picked card at front
+    const targetAngle = -(pick * stepAngle) - 360 * 6;
+    // reset without transition, then animate
+    track.style.transition = 'none';
+    track.style.transform = 'rotateY(0deg)';
+    SFX.spin();
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      track.style.transition = 'transform 3.6s cubic-bezier(.12,.78,.18,1)';
+      track.style.transform = `rotateY(${targetAngle}deg)`;
+    }));
+    // mark winner card after the spin settles
+    setTimeout(() => {
+      const winner = track.querySelector(`.rc-card[data-idx="${pick}"]`);
+      if (winner) winner.classList.add('winner');
+    }, 3650);
+  }
+  G.data.announceAt = 3.9; G.data.startedMatch = false;
   setMode('roulette');
 }
 
@@ -504,8 +545,18 @@ function enterMatch(mapDef) {
   G.map = mapDef.build(); initFX();
   G.map.def = mapDef;
   if (G.map.timerRef !== undefined) G.map.timerRef = G.map.surviveTime;
+  const ctx = G.map;
   const sp = G.map.spawnPoints;
   const spectator = !!G.data.isHostSpectator;
+  // Helper: snap an actor's spawn Y to the actual ground height at their XZ,
+  // so nobody starts mid-air and falls on the first frame (was the
+  // "jalan/bug awal match" jank — spawnGrid hardcoded Y=2).
+  const snapToGround = (a) => {
+    if (ctx.groundHeightAt) {
+      const gy = ctx.groundHeightAt(a.pos.x, a.pos.z);
+      if (gy !== null) { a.pos.y = gy; a.checkpoint.y = gy; a.grounded = true; a.vel.y = 0; }
+    }
+  };
   // Host spectators don't spawn a controllable player — they observe the match.
   if (spectator) {
     G.player = null;
@@ -515,6 +566,7 @@ function enterMatch(mapDef) {
   } else {
     G.player = new Actor(shared.selectedSkin, true, 'player');
     G.player.pos.copy(sp[0]); G.player.checkpoint.copy(sp[0]);
+    snapToGround(G.player);
     G.actors = [G.player];
   }
   Input.camYaw = 0; Input.camPitch = 0.28;
@@ -529,6 +581,7 @@ function enterMatch(mapDef) {
     const a = new Actor(peer.skin || randomBotSkinLocal(), false, botBrain);
     a.pos.copy(sp[spawnIdx % sp.length]); a.pos.x += (Math.random() - 0.5);
     a.checkpoint.copy(a.pos);
+    snapToGround(a);
     a.addNameplate(peer.name || 'Player');
     a._isRealPeer = true;
     a._remote = true;
@@ -543,6 +596,7 @@ function enterMatch(mapDef) {
       const b = new Actor(randomBotSkinLocal(), false, botBrain);
       b.pos.copy(sp[i % sp.length]); b.pos.x += (Math.random() - 0.5);
       b.checkpoint.copy(b.pos);
+      snapToGround(b);
       G.actors.push(b);
     }
   }
@@ -846,6 +900,7 @@ function onCustomSelect(tab, item) {
     buildPreview();
   } else if (tab === 'emotes') {
     shared.selectedEmote = item.k;
+    window.__spEquippedEmote = item.k;   // so keyboard E + quick-tap use it
     if (shared.user) { shared.user.emote = item.k; Auth.save(shared.user); }
   } else {
     shared.selectedTrail = item.k;
@@ -1088,6 +1143,14 @@ function showHistory() {
 // CAMERA + HUD
 // ============================================================
 function updateCamera(dt) {
+  // Sun/shadow rig follows whatever the camera is looking at, so the
+  // directional shadow stays crisp everywhere in the arena.
+  if (G.mode === 'lobby' || G.mode === 'match') {
+    if (G.player) setSunFollowTarget(G.player.pos);
+    else if (G.actors && G.actors.length) setSunFollowTarget(G.actors[0].pos);
+  } else {
+    setSunFollowTarget(_originVec);
+  }
   if (G.mode === 'menu' || G.mode === 'customize') {
     if (G.preview) {
       const a = G.modeT * 0.4;
@@ -1122,20 +1185,25 @@ function updateCamera(dt) {
     }
     if (!G.player) return;   // safety: no player, no follow
     const p = G.player.pos;
-    // look-ahead: shift camera target slightly in player's movement direction
-    const vx = G.player.vel.x, vz = G.player.vel.z;
-    const speed = Math.hypot(vx, vz);
+    // look-ahead: smooth the velocity first (low-pass filter) so collision
+    // push-backs and accel jitter don't translate into camera jitter.
+    _smoothVx += (G.player.vel.x - _smoothVx) * (1 - Math.exp(-8 * dt));
+    _smoothVz += (G.player.vel.z - _smoothVz) * (1 - Math.exp(-8 * dt));
+    const speed = Math.hypot(_smoothVx, _smoothVz);
     const laScale = G.mode === 'match' ? 0.6 : 0.3;
-    const laX = speed > 0.1 ? (vx / speed) * Math.min(speed, 4) * laScale : 0;
-    const laZ = speed > 0.1 ? (vz / speed) * Math.min(speed, 4) * laScale : 0;
+    // smooth dead-zone: look-ahead ramps in continuously instead of popping
+    // at the speed>0.1 boundary (no more abrupt look-ahead snap on coast).
+    const lookAmt = Math.min(1, speed / 1.5);
+    const laX = lookAmt * (_smoothVx / Math.max(0.001, speed)) * Math.min(speed, 4) * laScale;
+    const laZ = lookAmt * (_smoothVz / Math.max(0.001, speed)) * Math.min(speed, 4) * laScale;
     // Portrait phones are tall+thin → pull the camera a bit closer + higher so
     // the player stays nicely framed without the action drifting off-screen.
     const portrait = window.innerHeight > window.innerWidth * 1.15;
     const camDist = portrait ? 7.0 : 9;
     const camHeight = portrait ? 4.6 : 4;
     _camTarget.set(p.x + laX + Math.sin(Input.camYaw) * camDist, p.y + camHeight + Input.camPitch * 3, p.z + laZ + Math.cos(Input.camYaw) * camDist);
-    // frame-rate-independent smooth lerp (slightly slower for cinematic feel)
-    const k = 1 - Math.exp(-(G.mode === 'match' ? 8 : 6) * dt);
+    // frame-rate-independent smooth lerp (slightly faster in match for responsiveness)
+    const k = 1 - Math.exp(-(G.mode === 'match' ? 9 : 6) * dt);
     camera.position.lerp(_camTarget, k);
     camera.lookAt(p.x + laX * 0.5, p.y + 1, p.z + laZ * 0.5);
     return;
@@ -1297,4 +1365,46 @@ export function wireAll() {
     authResult(authTab === 'register' ? Auth.register(u, p, sol) : Auth.login(u, p));
   };
   document.getElementById('auth-pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('auth-submit').click(); });
+
+  // ---- Emote wheel: long-press #btn-emote fires sp_open_emote_wheel ----
+  initEmoteWheel();
+}
+
+/** Build/show/hide the radial emote wheel. A slice tap plays that emote
+ *  (and sets it as the quick-tap default). Tapping backdrop closes it. */
+function initEmoteWheel() {
+  const wheel = document.getElementById('emote-wheel');
+  const ring = document.getElementById('ew-ring');
+  if (!wheel || !ring) return;
+  const close = () => wheel.classList.add('hidden');
+  // backdrop click closes (don't close on the ring itself)
+  wheel.querySelector('.ew-backdrop')?.addEventListener('click', close);
+  window.addEventListener('sp_open_emote_wheel', () => {
+    // populate 6 slices arranged radially
+    ring.innerHTML = '';
+    const n = EMOTES.length;
+    const R = 95; // px radius from center
+    EMOTES.forEach((em, i) => {
+      const ang = (i / n) * Math.PI * 2 - Math.PI / 2; // start at top
+      const x = Math.cos(ang) * R, y = Math.sin(ang) * R;
+      const slice = document.createElement('div');
+      slice.className = 'ew-slice';
+      slice.style.transform = `translate(${x}px, ${y}px)`;
+      slice.innerHTML = `<span class="ew-emoji">${em.e}</span><span class="ew-name">${em.n}</span>`;
+      const fire = (e) => {
+        e.preventDefault(); e.stopPropagation();
+        // set as equipped + trigger immediately
+        shared.selectedEmote = em.k;
+        window.__spEquippedEmote = em.k;
+        if (shared.user) { shared.user.emote = em.k; Auth.save(shared.user); }
+        Input.triggerEmote(em.k);
+        SFX.click();
+        close();
+      };
+      slice.addEventListener('click', fire);
+      slice.addEventListener('touchend', fire, { passive: false });
+      ring.appendChild(slice);
+    });
+    wheel.classList.remove('hidden');
+  });
 }
