@@ -13,8 +13,7 @@ import * as THREE from 'three';
 import { scene, renderer, camera } from '../core/Engine.js';
 import { lambertMat, basicMat, makeBillboard } from '../core/AssetFactory.js';
 import {
-  makeGridFloor, makeMoons, makeOrbs, makeFloatingCandles, makeChartLine,
-  makeBuilding, clearScene, spawnGrid, make3DClouds, makeFloatingIslands, make3DTileFloor
+  clearScene, make3DClouds, makeFloatingIslands, make3DTileFloor
 } from './env.js';
 import { makeRedCandle, updateRedCandle } from '../entities/RedCandle.js';
 import { makeGreenTrampoline, updateGreenTrampoline, BOUNCE_VELOCITY } from '../entities/GreenTrampoline.js';
@@ -67,26 +66,10 @@ export function buildRaceCourse(cfg) {
   const underFloor = new THREE.Mesh(underGeo, lambertMat(SP_PALETTE.wall));
   underFloor.position.set(0, -12, L / 2); group.add(underFloor);
 
-  group.add(makeGridFloor(540, -34, SP_PALETTE.grass));
-  group.add(makeMoons());
-  const orbs = makeOrbs(36, 90, 8); group.add(orbs);
-  makeFloatingCandles(group, L, W, 22);
-  makeChartLine(group, L, W, 4, SP_PALETTE.edge);
-
-  // buildings along track — pastel palette
-  const bPalette = [SP_PALETTE.floor1, SP_PALETTE.edge, SP_PALETTE.terrain, SP_PALETTE.wall, SP_PALETTE.floor2];
-  const bTypes = ['cone', 'pyramid', 'dome', 'flat'];
-  for (let z = 15; z < L - 10; z += 28) {
-    for (const sx of [-1, 1]) {
-      const bh = 5 + Math.random() * 6, bw = 4 + Math.random() * 2;
-      const b = makeBuilding({ w: bw, d: bw, h: bh, color: bPalette[Math.floor(z) % bPalette.length], roofColor: bPalette[(Math.floor(z) + 2) % bPalette.length], roofType: bTypes[Math.floor(z / 28) % bTypes.length], winColor: SP_PALETTE.edge, flag: z % 56 === 0 });
-      b.position.set(sx * (W + 6 + Math.random() * 3), 0, z);
-      b.rotation.y = Math.random() * Math.PI;
-      group.add(b);
-    }
+  // Per-level themed decor (each level supplies its own unique elements)
+  if (typeof cfg.buildDecor === 'function') {
+    cfg.buildDecor(group, L, W, heightFn);
   }
-  const grandstand = makeBuilding({ w: W * 2.2, d: 5, h: 12, color: SP_PALETTE.edge, roofColor: SP_PALETTE.terrain, roofType: 'flat', winColor: SP_PALETTE.edge, flag: false });
-  grandstand.position.set(0, 0, L + 8); group.add(grandstand);
 
   // start gate
   const sgate = new THREE.Group();
@@ -245,7 +228,6 @@ export function buildRaceCourse(cfg) {
   }
 
   function update(dt, t) {
-    orbs.userData.update(t);
     // candles spawn + drift
     candleTimer -= dt;
     if (cfg.candles && candleTimer <= 0 && candles.length < 10) { candleTimer = 1.5 + Math.random() * 1.8; spawnRedCandle(); }

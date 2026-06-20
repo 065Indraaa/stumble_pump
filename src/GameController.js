@@ -19,7 +19,7 @@ import { Actor } from './character/Actor.js';
 import { spawnBot } from './character/BotController.js';
 import { SKINS, EMOTES, TRAILS } from './character/skins.js';
 import { lambertMat } from './core/AssetFactory.js';
-import { clearScene, make3DClouds, makeFloatingIslands, make3DTileFloor } from './levels/env.js';
+import { clearScene, make3DClouds, makeFloatingIslands } from './levels/env.js';
 import { MOVE_SPEED, SP_PALETTE } from './config/constants.js';
 
 import { buildLobby } from './levels/lobby.js';
@@ -69,22 +69,132 @@ export function updateTopBar() {
 }
 
 // ============================================================
-// MENU / CUSTOMIZE preview
+// MENU / CUSTOMIZE preview — Stumble Pump showcase stage
 // ============================================================
 function buildPreview() {
   clearScene();
   renderer.setClearColor(SP_PALETTE.sky);
-  scene.fog = new THREE.Fog(SP_PALETTE.fog, 30, 150);
+  scene.fog = new THREE.Fog(SP_PALETTE.fog, 40, 180);
   const group = new THREE.Group(); scene.add(group);
-  
-  // 3D Background elements
-  group.add(make3DClouds(20, 100, 30));
-  group.add(makeFloatingIslands(8, 80));
 
-  // AAA Stumble Guys Podium
-  const floorFn = () => 0;
-  const floor = make3DTileFloor(8, 8, 4, floorFn, SP_PALETTE.floor1, SP_PALETTE.floor2);
-  group.add(floor);
+  // ── SKY ────────────────────────────────────────────────────────────
+  group.add(make3DClouds(18, 90, 35));
+  group.add(makeFloatingIslands(6, 75));
+
+  // ── STAGE PLATFORM (hexagonal showcase) ───────────────────────────
+  // Hex disc: top surface at Y=0, character stands here
+  const stageDisc = new THREE.Mesh(
+    new THREE.CylinderGeometry(6, 6.5, 1.2, 6),
+    new THREE.MeshLambertMaterial({ color: SP_PALETTE.floor1 })
+  );
+  stageDisc.position.y = -0.6; // top at Y=0
+  stageDisc.castShadow = true; stageDisc.receiveShadow = true;
+  group.add(stageDisc);
+
+  // Hex edge trim (top ring, Y=0)
+  const stageTrim = new THREE.Mesh(
+    new THREE.TorusGeometry(6, 0.22, 8, 6),
+    new THREE.MeshLambertMaterial({ color: SP_PALETTE.floor2 })
+  );
+  stageTrim.rotation.x = -Math.PI / 2; stageTrim.position.y = 0.02;
+  group.add(stageTrim);
+
+  // Under-pedestal (tapers down)
+  const pedestal = new THREE.Mesh(
+    new THREE.CylinderGeometry(4.5, 3.5, 2.5, 6),
+    new THREE.MeshLambertMaterial({ color: SP_PALETTE.terrain })
+  );
+  pedestal.position.y = -2.05;
+  pedestal.castShadow = true; group.add(pedestal);
+
+  // Stage base ring
+  const baseRing = new THREE.Mesh(
+    new THREE.TorusGeometry(3.8, 0.35, 8, 6),
+    new THREE.MeshLambertMaterial({ color: SP_PALETTE.edge })
+  );
+  baseRing.rotation.x = -Math.PI / 2; baseRing.position.y = -3.3;
+  group.add(baseRing);
+
+  // ── SPOTLIGHT COLUMNS (3 columns around the stage) ────────────────
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * Math.PI * 2 + Math.PI / 6;
+    const cr = 9.5;
+    const cx = Math.cos(a) * cr, cz = Math.sin(a) * cr;
+    const colColor = [SP_PALETTE.floor1, SP_PALETTE.terrain, SP_PALETTE.edge][i];
+
+    // Column shaft (Y: 0 to 5)
+    const shaft = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.4, 0.5, 5, 10),
+      new THREE.MeshLambertMaterial({ color: colColor })
+    );
+    shaft.position.set(cx, 2.5, cz); shaft.castShadow = true; group.add(shaft);
+
+    // Column capital (top)
+    const capital = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.7, 0.4, 0.7, 10),
+      new THREE.MeshLambertMaterial({ color: SP_PALETTE.floor2 })
+    );
+    capital.position.set(cx, 5.35, cz); group.add(capital);
+
+    // Lamp globe on top
+    const lamp = new THREE.Mesh(
+      new THREE.SphereGeometry(0.55, 10, 8),
+      new THREE.MeshLambertMaterial({ color: 0xFFFADD })
+    );
+    lamp.position.set(cx, 6.1, cz); group.add(lamp);
+  }
+
+  // ── TROPHY / CHAMPION CUP (to the right of character) ─────────────
+  const trophyGroup = new THREE.Group();
+  trophyGroup.position.set(5, 0, -2);
+  group.add(trophyGroup);
+
+  // Cup body
+  const cupBody = new THREE.Mesh(
+    new THREE.CylinderGeometry(1.4, 0.8, 3, 12),
+    new THREE.MeshLambertMaterial({ color: SP_PALETTE.floor2 })
+  );
+  cupBody.position.y = 1.5; cupBody.castShadow = true; trophyGroup.add(cupBody);
+
+  // Cup mouth (wider top)
+  const cupMouth = new THREE.Mesh(
+    new THREE.CylinderGeometry(1.7, 1.4, 0.5, 12),
+    new THREE.MeshLambertMaterial({ color: SP_PALETTE.floor2 })
+  );
+  cupMouth.position.y = 3.25; trophyGroup.add(cupMouth);
+
+  // Cup base
+  const cupBase = new THREE.Mesh(
+    new THREE.CylinderGeometry(1.2, 1.4, 0.5, 12),
+    new THREE.MeshLambertMaterial({ color: SP_PALETTE.edge })
+  );
+  cupBase.position.y = 0.25; trophyGroup.add(cupBase);
+
+  // Cup handles (half-torus each side)
+  for (const sx of [-1, 1]) {
+    const handle = new THREE.Mesh(
+      new THREE.TorusGeometry(0.7, 0.12, 6, 8, Math.PI),
+      new THREE.MeshLambertMaterial({ color: SP_PALETTE.floor2 })
+    );
+    handle.position.set(sx * 1.9, 1.8, 0);
+    handle.rotation.z = sx * Math.PI / 2;
+    trophyGroup.add(handle);
+  }
+
+  // Star on top of cup
+  const starSphere = new THREE.Mesh(
+    new THREE.OctahedronGeometry(0.5, 0),
+    new THREE.MeshLambertMaterial({ color: SP_PALETTE.floor2 })
+  );
+  starSphere.position.y = 4; trophyGroup.add(starSphere);
+
+  // ── PUMP PEDESTAL TEXT PLATE ───────────────────────────────────────
+  const textPlate = new THREE.Mesh(
+    new THREE.BoxGeometry(4.5, 0.8, 0.3),
+    new THREE.MeshLambertMaterial({ color: SP_PALETTE.terrain })
+  );
+  textPlate.position.set(0, -2.0, 3.2);
+  group.add(textPlate);
 
   if (G.preview) { G.preview.dispose(); }
   G.preview = new Actor(shared.selectedSkin, true, 'player');
@@ -120,16 +230,26 @@ export function enterLobby() {
   G.player.pos.set(0, 2, 0);
   G.player.checkpoint.copy(G.player.pos);
   G.actors = [G.player];
-  G.data = { spawnTimer: 0.2, target: 32, countdown: -1, cdTimer: 0, minReached: false, forceStart: false, matchmade: false };
+  // 60s waiting timer: real players join via matchmaking; bots trickle in
+  // only after a grace window so the lobby doesn't feel instantly flooded.
+  G.data = {
+    spawnTimer: 6.0,      // grace period before first bot (let real players join)
+    target: 32,
+    countdown: -1,
+    cdTimer: 0,
+    waitTimer: 60,        // 60s lobby waiting clock
+    waitStarted: true,
+    forceStart: false,
+    matchmade: false,
+  };
   showScreen('lobby-ui');
   document.getElementById('lobby-count').textContent = '1';
   Net.connect();
   Net.setLocal({ name: shared.user?.name || 'Player', skin: shared.selectedSkin });
-  // join the public matchmaking room so real peers see each other in lobby
+  // matchmaking: this fills an EXISTING public room first (Net.joinMatchmaking
+  // picks a room with free slots; only creates a new one if none exist)
   if (!G.data.isRoomMatch) Net.joinMatchmaking();
-  Net.setArena(true);   // start broadcasting our position for real-time sync
-  // only seed a couple of bots so the lobby feels alive — real peers fill in
-  for (let i = 0; i < 2; i++) spawnLobbyBot();
+  Net.setArena(true);   // broadcast our position so real peers see us
   setMode('lobby');
 }
 
@@ -142,39 +262,69 @@ function spawnLobbyBot() {
 
 function updateLobby(dt, t) {
   const d = G.data;
-  // broadcast our lobby position for real-time peer sync
+  // ---- broadcast our lobby position for real-time peer sync ----
   if (Net.connected) {
     Net.setLocal({ pos: { x: G.player.pos.x, y: G.player.pos.y, z: G.player.pos.z }, anim: G.player.anim.state, facing: G.player.facing });
     Net.publishState();
     Net.publish();
     Net.prune();
-    // reconcile remote-peer avatars (real players from other devices)
     syncRemoteActors(dt, t, G.map, 'lobbyBot');
   }
-  // spawn filler bots slowly only when offline OR to top up an empty lobby
-  d.spawnTimer -= dt;
   const realPeerCount = Net.roomPeersList ? Net.roomPeersList().length : 0;
   const totalActors = G.actors.length;
-  if (d.spawnTimer <= 0 && totalActors < d.target && (Net.failed || (!Net.connected) || totalActors < 4 + realPeerCount)) {
-    d.spawnTimer = 0.6 + Math.random() * 0.8;
-    spawnLobbyBot();
+
+  // ---- 60s waiting clock ----
+  if (d.waitStarted && d.countdown < 0) {
+    d.waitTimer -= dt;
+    if (d.waitTimer <= 0) {
+      // time's up — start the match with whoever is here
+      d.waitTimer = 0;
+      d.forceStart = true;
+    }
   }
+
+  // ---- bot trickle: ONLY in public quick-play (never in private rooms).
+  //      In a room match, the lobby is real-players-only — bots are disabled
+  //      so friends actually play against each other. ----
+  d.spawnTimer -= dt;
+  if (!G.data.isRoomMatch) {
+    const gracePassed = (60 - d.waitTimer) > 6;
+    const maxBots = Net.connected ? Math.max(0, 6 - realPeerCount) : 28; // offline: fill up
+    const botCount = G.actors.filter((a) => !a.isPlayer && !a._remote).length;
+    if (gracePassed && d.spawnTimer <= 0 && totalActors < d.target && botCount < maxBots) {
+      d.spawnTimer = 2.5 + Math.random() * 2.0;  // slow trickle (every ~3-4s)
+      spawnLobbyBot();
+    }
+  }
+
   G.actors.forEach((a) => a.update(dt, t, G.map));
   G.map.update(dt, t);
-  if (Net.connected) {
-    document.getElementById('lobby-count').textContent = Math.min(1 + realPeerCount + (totalActors - 1), 32);
-  } else {
-    document.getElementById('lobby-count').textContent = totalActors;
-  }
-  const total = G.actors.length;
+
+  // ---- HUD ----
+  document.getElementById('lobby-count').textContent = Math.min(1 + realPeerCount + (totalActors - 1 - (G.actors.filter((a) => !a.isPlayer && !a._remote).length)), 32);
   const statusEl = document.getElementById('net-status');
   const fs = document.getElementById('force-start');
-  if (total >= 32) statusEl.textContent = 'Lobby full — match starting!';
-  else if (Net.connected) statusEl.textContent = `${realPeerCount} live player${realPeerCount === 1 ? '' : 's'} · ${total}/32 in lobby`;
-  else statusEl.textContent = Net.failed ? 'Offline mode — bots only' : 'Connecting…';
-  if ((Net.failed || total >= 8) && total < 32) fs.classList.remove('hidden');
-  else fs.classList.add('hidden');
-  if (total >= 32 || d.forceStart) {
+  if (G.data.isRoomMatch) {
+    // private room: show waiting-for-friends state, host can start anytime
+    if (realPeerCount > 0) statusEl.textContent = `${realPeerCount + 1} players in room · waiting to start`;
+    else statusEl.textContent = `Waiting for friends… ${Math.ceil(d.waitTimer)}s`;
+    const isRoomHost = Net.roomMeta && Net.roomMeta.host;
+    fs.classList.toggle('hidden', !isRoomHost);
+    fs.textContent = isRoomHost ? 'START MATCH' : 'START WITH BOTS';
+  } else if (Net.connected) {
+    if (realPeerCount > 0) statusEl.textContent = `${realPeerCount + 1} live players · waiting…`;
+    else statusEl.textContent = `Searching for players… ${Math.ceil(d.waitTimer)}s`;
+    const canForce = realPeerCount >= 1 || (60 - d.waitTimer) > 20;
+    fs.classList.toggle('hidden', !canForce);
+    fs.textContent = 'START WITH BOTS';
+  } else {
+    statusEl.textContent = Net.failed ? 'Offline mode — bots only' : 'Connecting…';
+    fs.classList.toggle('hidden', totalActors < 2);
+    fs.textContent = 'START WITH BOTS';
+  }
+
+  // ---- start trigger: room full, force-start, OR 60s elapsed ----
+  if (totalActors >= 32 || d.forceStart) {
     if (d.countdown < 0) { d.countdown = 5; d.cdTimer = 0; }
     d.cdTimer += dt;
     const cdEl = document.getElementById('countdown-overlay');
@@ -300,12 +450,15 @@ function enterMatch(mapDef) {
     a._peerId = peer.id;
     G.actors.push(a); spawnIdx++;
   }
-  // Fill remaining slots with bots
-  for (let i = spawnIdx; i < fieldSize; i++) {
-    const b = new Actor(randomBotSkinLocal(), false, botBrain);
-    b.pos.copy(sp[i % sp.length]); b.pos.x += (Math.random() - 0.5);
-    b.checkpoint.copy(b.pos);
-    G.actors.push(b);
+  // Fill remaining slots with bots — BUT NOT in private room matches,
+  // where friends play exclusively against each other (no bots).
+  if (!G.data.isRoomMatch) {
+    for (let i = spawnIdx; i < fieldSize; i++) {
+      const b = new Actor(randomBotSkinLocal(), false, botBrain);
+      b.pos.copy(sp[i % sp.length]); b.pos.x += (Math.random() - 0.5);
+      b.checkpoint.copy(b.pos);
+      G.actors.push(b);
+    }
   }
   // ensure net is in arena-broadcast mode so peers see us move
   Net.setArena(true);
@@ -826,7 +979,11 @@ export function wireAll() {
   click('btn-rooms', enterRooms);
   click('btn-history', showHistory);
   click('cust-back', enterMenu);
-  click('force-start', () => { G.data.forceStart = true; });
+  click('force-start', () => {
+    G.data.forceStart = true;
+    // if host of a private room, tell all peers to launch the match too
+    if (G.data.isRoomMatch && Net.roomMeta && Net.roomMeta.host) Net.announceRoomStart();
+  });
   document.querySelectorAll('.tab').forEach((tb) => tb.onclick = () => { SFX.click(); buildCustomGrid(tb.dataset.tab); });
 
   click('result-continue', () => {

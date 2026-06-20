@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import { scene, renderer } from '../core/Engine.js';
 import { lambertMat, basicMat } from '../core/AssetFactory.js';
-import { clearScene, setSynthwaveBackground, makeGridFloor, makeMoons, makeOrbs, makeBuilding, make3DClouds, makeFloatingIslands } from './env.js';
+import { clearScene, make3DClouds, makeFloatingIslands } from './env.js';
 import { makeHexPlatform, warnPlatform, updateHexPlatform } from '../entities/HexPlatform.js';
 import { SFX } from '../core/AudioManager.js';
 import { SP_PALETTE } from '../config/constants.js';
@@ -19,12 +19,9 @@ export function buildRugpull() {
   const group = new THREE.Group(); scene.add(group);
   group.add(make3DClouds(20, 140, 40));
   group.add(makeFloatingIslands(8, 120));
-  group.add(makeGridFloor(320, -22, SP_PALETTE.grass));
-  group.add(makeMoons());
-  const orbs = makeOrbs(30, 50, 6); group.add(orbs);
 
-  // void floor
-  const voidFloor = new THREE.Mesh(new THREE.PlaneGeometry(240, 240), lambertMat(SP_PALETTE.wall));
+  // Far ground plane (catches depth, no gameplay use)
+  const voidFloor = new THREE.Mesh(new THREE.PlaneGeometry(300, 300), lambertMat(SP_PALETTE.wall));
   voidFloor.rotation.x = -Math.PI / 2; voidFloor.position.y = -20; group.add(voidFloor);
 
   // arena ring
@@ -40,14 +37,143 @@ export function buildRugpull() {
     cap.position.set(Math.cos(a) * 28, 2.5, Math.sin(a) * 28);
     cap.rotation.y = -a + Math.PI / 2; group.add(cap);
   }
-  // buildings around arena — pastel palette
-  const bPalette = [SP_PALETTE.floor1, SP_PALETTE.edge, SP_PALETTE.terrain, SP_PALETTE.floor2, SP_PALETTE.wall];
+  // ── THEMED DECOR: Rug Casino ─────────────────────────────────────────
+  // Instead of generic buildings: giant roulette wheel centrepiece above arena,
+  // coin stack towers around ring, casino cage at cardinal points, warning lights.
+
+  // Giant rug-wheel on 4 SOLID SUPPORT PILLARS (not hovering in the air)
+  // Pillars stand from Y=0 up to Y=14 where the wheel sits
+  const WHEEL_Y = 14;
+  const PILLAR_H = WHEEL_Y;        // from floor to wheel centre
+  const PILLAR_R = 18;             // radius of pillar ring
+  for (let p = 0; p < 4; p++) {
+    const pa = (p / 4) * Math.PI * 2;
+    const px2 = Math.cos(pa) * PILLAR_R, pz2 = Math.sin(pa) * PILLAR_R;
+    // Shaft: base at Y=0, centre at PILLAR_H/2
+    const shaft = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.4, 0.5, PILLAR_H, 10),
+      lambertMat(0x555566)
+    );
+    shaft.position.set(px2, PILLAR_H / 2, pz2);
+    shaft.castShadow = true; group.add(shaft);
+    // Capital at top flush with wheel
+    const cap2 = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.7, 0.4, 0.6, 10),
+      lambertMat(SP_PALETTE.floor2)
+    );
+    cap2.position.set(px2, PILLAR_H + 0.3, pz2);
+    group.add(cap2);
+  }
+
+  const wheelGroup = new THREE.Group();
+  wheelGroup.position.set(0, WHEEL_Y, 0);
+  group.add(wheelGroup);
+
+  // Wheel disc
+  const wheelDisc = new THREE.Mesh(
+    new THREE.CylinderGeometry(9, 9, 0.6, 24),
+    lambertMat(0x1A1A2E)
+  );
+  wheelDisc.castShadow = true; wheelGroup.add(wheelDisc);
+
+  // Wheel segments (alternating red/green like roulette)
+  for (let s = 0; s < 12; s++) {
+    const a = (s / 12) * Math.PI * 2;
+    const seg = new THREE.Mesh(
+      new THREE.BoxGeometry(0.4, 0.7, 7),
+      lambertMat(s % 2 === 0 ? SP_PALETTE.lava : SP_PALETTE.terrain)
+    );
+    seg.position.set(Math.cos(a + Math.PI / 12) * 4.5, 0.65, Math.sin(a + Math.PI / 12) * 4.5);
+    seg.rotation.y = -(a + Math.PI / 12);
+    wheelGroup.add(seg);
+  }
+
+  // Wheel rim ring
+  const wheelRim = new THREE.Mesh(
+    new THREE.TorusGeometry(9, 0.4, 8, 32),
+    lambertMat(SP_PALETTE.floor2)
+  );
+  wheelRim.rotation.x = -Math.PI / 2; wheelGroup.add(wheelRim);
+
+  // Wheel hub
+  const hub = new THREE.Mesh(
+    new THREE.CylinderGeometry(1.2, 1.2, 1.2, 12),
+    lambertMat(SP_PALETTE.edge)
+  );
+  hub.position.y = 0.9; wheelGroup.add(hub);
+
+  // Cross spokes (4 solid beams from hub to rim)
+  for (let sp = 0; sp < 4; sp++) {
+    const sa = (sp / 4) * Math.PI * 2;
+    const spoke = new THREE.Mesh(
+      new THREE.BoxGeometry(0.3, 0.4, 8),
+      lambertMat(0x888898)
+    );
+    spoke.rotation.y = sa;
+    wheelGroup.add(spoke);
+  }
+
+  // ----- Coin stack towers (4 cardinal points outside ring) -----
+  const coinStackPositions = [
+    { a: 0 }, { a: Math.PI / 2 }, { a: Math.PI }, { a: Math.PI * 1.5 }
+  ];
+  for (const cs of coinStackPositions) {
+    const csr = 36;
+    const cx = Math.cos(cs.a) * csr, cz = Math.sin(cs.a) * csr;
+    const towerGroup = new THREE.Group();
+    towerGroup.position.set(cx, 0, cz);
+    group.add(towerGroup);
+
+    // Stack of coins (10 coins, each slightly different radius for organic look)
+    const coinH = 0.5;
+    for (let ci = 0; ci < 10; ci++) {
+      const coinMesh = new THREE.Mesh(
+        new THREE.CylinderGeometry(1.8 - ci * 0.04, 1.8 - ci * 0.04, coinH, 16),
+        lambertMat(SP_PALETTE.floor2)
+      );
+      coinMesh.position.y = ci * (coinH + 0.05) + coinH / 2;
+      coinMesh.castShadow = true; towerGroup.add(coinMesh);
+
+      // Rim edge on every other coin
+      if (ci % 2 === 0) {
+        const rim = new THREE.Mesh(
+          new THREE.TorusGeometry(1.8 - ci * 0.04, 0.08, 6, 16),
+          lambertMat(SP_PALETTE.edge)
+        );
+        rim.rotation.x = -Math.PI / 2;
+        rim.position.y = ci * (coinH + 0.05) + coinH;
+        towerGroup.add(rim);
+      }
+    }
+  }
+
+  // ----- Warning signal lights (8 poles around arena) -----
   for (let i = 0; i < 8; i++) {
-    const a = i / 8 * Math.PI * 2;
-    const bx = Math.cos(a) * 42, bz = Math.sin(a) * 42;
-    const bh = 7 + (i % 3) * 4;
-    const b = makeBuilding({ w: 5, d: 5, h: bh, color: bPalette[i % 5], roofColor: bPalette[(i + 2) % 5], roofType: ['cone', 'pyramid', 'dome', 'flat'][i % 4], winColor: SP_PALETTE.edge });
-    b.position.set(bx, 0, bz); b.rotation.y = -a; group.add(b);
+    const a = (i / 8) * Math.PI * 2;
+    const lr = 31.5;
+    const lx = Math.cos(a) * lr, lz = Math.sin(a) * lr;
+
+    // Pole
+    const pole = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.15, 0.18, 6, 6),
+      lambertMat(0x444455)
+    );
+    pole.position.set(lx, 3, lz); pole.castShadow = true; group.add(pole);
+
+    // Light head
+    const lightColor = i % 2 === 0 ? SP_PALETTE.lava : SP_PALETTE.floor2;
+    const lightHead = new THREE.Mesh(
+      new THREE.SphereGeometry(0.55, 10, 8),
+      basicMat(lightColor)
+    );
+    lightHead.position.set(lx, 6.6, lz); group.add(lightHead);
+
+    // Light hood
+    const hood = new THREE.Mesh(
+      new THREE.ConeGeometry(0.7, 0.6, 8),
+      lambertMat(0x222233)
+    );
+    hood.position.set(lx, 7.3, lz); group.add(hood);
   }
 
   // 7x7 platform grid — pastel platform colors
@@ -113,8 +239,9 @@ export function buildRugpull() {
       }
     },
     update(dt, t) {
-      orbs.userData.update(t);
       arenaRing.rotation.z += 0.002;
+      // Slowly spin the giant roulette wheel
+      wheelGroup.rotation.y += 0.004;
       coins.forEach((c) => {
         if (!c.collected) { c.spin += dt * 3; c.mesh.rotation.z = c.spin; c.mesh.position.y = 1.5 + Math.sin(t * 2 + c.spin) * 0.2; }
       });

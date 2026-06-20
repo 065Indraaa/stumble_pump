@@ -66,16 +66,38 @@ export function makeOrbs(count = 50, range = 40, yBase = 2) {
 }
 
 export function makeMountains(z = -80, color = 0x1D3934) {
-  const geo = new THREE.PlaneGeometry(260, 50, 40, 1);
-  const pos = geo.attributes.position;
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i);
-    pos.setY(i, Math.abs(Math.sin(x * 0.05)) * 8 + Math.random() * 2);
+  const g = new THREE.Group();
+  // Six distinct cone mountains evenly spaced from X=-130 to X=+130
+  const xPositions = [-130, -78, -26, 26, 78, 130];
+  const baseRadii  = [18, 21, 24, 20, 22, 19];
+  const heights    = [20, 28, 38, 32, 25, 22];
+
+  for (let i = 0; i < 6; i++) {
+    const r = baseRadii[i] + i * 1.5;
+    const h = heights[i] + i * 2;
+    // Main mountain cone — 8-sided for a chunky low-poly silhouette
+    const cone = new THREE.Mesh(
+      new THREE.ConeGeometry(r, h, 8),
+      lambertMat(color)
+    );
+    // Base of cone sits exactly at Y=0: center is at h/2
+    cone.position.set(xPositions[i], h / 2, z);
+    cone.castShadow = true;
+    g.add(cone);
+
+    // Snow cap — smaller white cone sitting on the peak
+    const capH = h * 0.22;
+    const capR = r * 0.32;
+    const cap = new THREE.Mesh(
+      new THREE.ConeGeometry(capR, capH, 8),
+      lambertMat(SP_PALETTE.cloud)
+    );
+    // Peak of main cone is at h/2 + h/2 = h from ground.
+    // Cap center is at peak - capH/2 so cap bottom meets peak.
+    cap.position.set(xPositions[i], h - capH / 2, z);
+    g.add(cap);
   }
-  geo.computeVertexNormals();
-  const m = new THREE.Mesh(geo, lambertMat(color));
-  m.position.set(0, 5, z);
-  return m;
+  return g;
 }
 
 /** Hex order-book shader floor (lobby centerpiece). pump.fun green/red orderbook. */
@@ -123,150 +145,222 @@ export function makeNeonPoles(radius = 29) {
 
 export function makeBuilding(opts = {}) {
   const w = opts.w ?? 6, d = opts.d ?? 6, h = opts.h ?? 10;
-  // pump.fun building palette — rich, saturated, dark-on-navy reads well
-  const color = opts.color ?? 0x1D3934;
-  const roofColor = opts.roofColor ?? 0x5FCB88;
-  const roofType = opts.roofType ?? 'cone';
-  const winColor = opts.winColor ?? 0xFFD23F;
-  const accent = opts.accent ?? 0x5FCB88;
+  const color     = opts.color     ?? SP_PALETTE.wall;
+  const roofColor = opts.roofColor ?? SP_PALETTE.terrain;
+  const roofType  = opts.roofType  ?? 'cone';
+  const winColor  = opts.winColor  ?? SP_PALETTE.floor2;
+  const accent    = opts.accent    ?? SP_PALETTE.terrain;
   const g = new THREE.Group();
 
-  // ---- stone base + beveled corner trim (sits wider than body) ----
+  // ----------------------------------------------------------------
+  // BASE — height 1.5, bottom at Y=0, center at Y=0.75
+  // ----------------------------------------------------------------
+  const BASE_H = 1.5;
   const baseMat = lambertMat(0x232636);
-  const base = new THREE.Mesh(new THREE.BoxGeometry(w + 0.8, 1.2, d + 0.8), baseMat);
-  base.position.y = 0.6; base.castShadow = true; base.receiveShadow = true; g.add(base);
+  const base = new THREE.Mesh(new THREE.BoxGeometry(w + 0.8, BASE_H, d + 0.8), baseMat);
+  base.position.y = BASE_H / 2; // 0.75 → bottom at Y=0
+  base.castShadow = true; base.receiveShadow = true;
+  g.add(base);
+
+  // Thin trim lip at very bottom
   const baseTrim = new THREE.Mesh(new THREE.BoxGeometry(w + 1.0, 0.35, d + 1.0), lambertMat(0x11141F));
-  baseTrim.position.y = 0.2; g.add(baseTrim);
-  // corner quoins (instanced cubes) — authored detail at building corners
+  baseTrim.position.y = 0.175; // 0 to 0.35
+  g.add(baseTrim);
+
+  // Corner quoins sitting on the base
   const quoinGeo = new THREE.BoxGeometry(0.3, 0.6, 0.3);
   const quoinMat = lambertMat(0x3A3F55);
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
     const q = new THREE.Mesh(quoinGeo, quoinMat);
-    q.position.set(sx * (w / 2 + 0.35), 0.6, sz * (d / 2 + 0.35));
+    // quoin center at Y = BASE_H - 0.3 so it rests on top of base slab
+    q.position.set(sx * (w / 2 + 0.35), BASE_H - 0.3, sz * (d / 2 + 0.35));
     g.add(q);
   }
 
-  // ---- main body (saturated pump.fun facade) ----
+  // ----------------------------------------------------------------
+  // MAIN BODY — base bottom = BASE_H, center = BASE_H + h/2
+  // ----------------------------------------------------------------
+  const bodyY = BASE_H + h / 2;
   const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), lambertMat(color));
-  body.position.y = 1.2 + h / 2; body.castShadow = true; body.receiveShadow = true; g.add(body);
+  body.position.y = bodyY;
+  body.castShadow = true; body.receiveShadow = true;
+  g.add(body);
 
-  // ---- window grid via InstancedMesh (front + back faces, efficient) ----
+  // ----------------------------------------------------------------
+  // WINDOWS — grid-based, Z = ±(d/2 + 0.02) for front/back faces
+  // ----------------------------------------------------------------
   const cols = Math.max(2, Math.floor(w / 1.4));
   const rows = Math.max(2, Math.floor(h / 1.4));
-  const winW = (w / cols) * 0.55, winH = (h / rows) * 0.55;
+  const winW = (w / cols) * 0.55;
+  const winH = (h / rows) * 0.55;
   const winGeo = new THREE.BoxGeometry(winW, winH, 0.08);
-  // warm gold windows (mild emissive so they read as "lit" — NOT bloom-heavy)
-  const winMat = new THREE.MeshStandardMaterial({ color: winColor, emissive: 0xFFB820, emissiveIntensity: 0.45, roughness: 0.35, metalness: 0.3 });
-  // front face windows
+  const winMat = new THREE.MeshStandardMaterial({
+    color: winColor, emissive: 0xFFB820,
+    emissiveIntensity: 0.45, roughness: 0.35, metalness: 0.3,
+  });
+
+  // Front face
   const totalFront = cols * rows;
   const frontInst = new THREE.InstancedMesh(winGeo, winMat, totalFront);
   const m = new THREE.Matrix4();
   let idx = 0;
-  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
-    const wx = -w / 2 + (c + 0.5) * (w / cols);
-    const wy = 1.2 + (r + 0.5) * (h / rows);
-    m.makeTranslation(wx, wy, d / 2 + 0.04);
-    frontInst.setMatrixAt(idx++, m);
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const wx = -w / 2 + (c + 0.5) * (w / cols);
+      const wy = BASE_H + (r + 0.5) * (h / rows);
+      m.makeTranslation(wx, wy, d / 2 + 0.02);
+      frontInst.setMatrixAt(idx++, m);
+    }
   }
   frontInst.instanceMatrix.needsUpdate = true;
   g.add(frontInst);
-  // back face windows (reuse same instanced mesh via clone with flip)
+
+  // Back face
   const backInst = frontInst.clone();
   backInst.material = winMat;
   let bidx = 0;
-  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
-    const wx = -w / 2 + (c + 0.5) * (w / cols);
-    const wy = 1.2 + (r + 0.5) * (h / rows);
-    m.makeTranslation(wx, wy, -(d / 2 + 0.04));
-    m.scale(new THREE.Vector3(1, 1, 1));
-    backInst.setMatrixAt(bidx++, m);
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const wx = -w / 2 + (c + 0.5) * (w / cols);
+      const wy = BASE_H + (r + 0.5) * (h / rows);
+      m.makeTranslation(wx, wy, -(d / 2 + 0.02));
+      backInst.setMatrixAt(bidx++, m);
+    }
   }
   backInst.instanceMatrix.needsUpdate = true;
   g.add(backInst);
 
-  // ---- side windows (left + right) so building isn't a flat slab ----
+  // Side windows (left + right)
   const sCols = Math.max(2, Math.floor(d / 1.4));
-  const swW = (d / sCols) * 0.5, swH = winH;
-  const sideWinGeo = new THREE.BoxGeometry(0.08, swH, swW);
+  const swW = (d / sCols) * 0.5;
+  const sideWinGeo = new THREE.BoxGeometry(0.08, winH, swW);
   const sideInstL = new THREE.InstancedMesh(sideWinGeo, winMat, sCols * rows);
   const sideInstR = new THREE.InstancedMesh(sideWinGeo, winMat, sCols * rows);
   let si = 0;
-  for (let r = 0; r < rows; r++) for (let c = 0; c < sCols; c++) {
-    const sx = -d / 2 + (c + 0.5) * (d / sCols);
-    const sy = 1.2 + (r + 0.5) * (h / rows);
-    m.makeTranslation(-w / 2 - 0.04, sy, sx); sideInstL.setMatrixAt(si, m);
-    m.makeTranslation(w / 2 + 0.04, sy, sx); sideInstR.setMatrixAt(si, m);
-    si++;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < sCols; c++) {
+      const sx = -d / 2 + (c + 0.5) * (d / sCols);
+      const sy = BASE_H + (r + 0.5) * (h / rows);
+      m.makeTranslation(-w / 2 - 0.04, sy, sx); sideInstL.setMatrixAt(si, m);
+      m.makeTranslation( w / 2 + 0.04, sy, sx); sideInstR.setMatrixAt(si, m);
+      si++;
+    }
   }
-  sideInstL.instanceMatrix.needsUpdate = true; sideInstR.instanceMatrix.needsUpdate = true;
+  sideInstL.instanceMatrix.needsUpdate = true;
+  sideInstR.instanceMatrix.needsUpdate = true;
   g.add(sideInstL, sideInstR);
 
-  // ---- storefront: pump.fun mint awning + sign panel + door ----
+  // ----------------------------------------------------------------
+  // STOREFRONT (awning, sign, door) — all at ground-floor level
+  // ----------------------------------------------------------------
   const awn = new THREE.Mesh(new THREE.BoxGeometry(w * 0.9, 0.18, 1.1), lambertMat(accent));
-  awn.position.set(0, 2.0, d / 2 + 0.45); g.add(awn);
-  // awning stripes (alternating color slats) for visual richness
+  awn.position.set(0, 2.0, d / 2 + 0.45);
+  g.add(awn);
   const stripeMat = lambertMat(0x11141F);
   for (let i = -2; i <= 2; i++) {
     const slat = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.2, 1.2), stripeMat);
-    slat.position.set(i * (w * 0.18), 2.0, d / 2 + 0.5); g.add(slat);
+    slat.position.set(i * (w * 0.18), 2.0, d / 2 + 0.5);
+    g.add(slat);
   }
   const awnSupportL = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.0, 6), lambertMat(0x3A3F55));
-  awnSupportL.position.set(-w * 0.4, 1.5, d / 2 + 0.55); g.add(awnSupportL);
-  const awnSupportR = awnSupportL.clone(); awnSupportR.position.x = w * 0.4; g.add(awnSupportR);
-  // sign panel above door (mint accent plaque)
+  awnSupportL.position.set(-w * 0.4, 1.5, d / 2 + 0.55);
+  g.add(awnSupportL);
+  const awnSupportR = awnSupportL.clone();
+  awnSupportR.position.x = w * 0.4;
+  g.add(awnSupportR);
   const sign = new THREE.Mesh(new THREE.BoxGeometry(w * 0.6, 0.35, 0.08), lambertMat(0x11141F));
-  sign.position.set(0, 2.55, d / 2 + 0.06); g.add(sign);
+  sign.position.set(0, 2.55, d / 2 + 0.06);
+  g.add(sign);
   const signDot = new THREE.Mesh(new THREE.CircleGeometry(0.08, 16), basicMat(0xA3E635));
-  signDot.position.set(-w * 0.18, 2.55, d / 2 + 0.11); g.add(signDot);
+  signDot.position.set(-w * 0.18, 2.55, d / 2 + 0.11);
+  g.add(signDot);
   const doorFrame = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.7, 0.1), lambertMat(0x0B0E1A));
-  doorFrame.position.set(0, 0.9, d / 2 + 0.03); g.add(doorFrame);
+  doorFrame.position.set(0, 0.9, d / 2 + 0.03);
+  g.add(doorFrame);
   const door = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.4, 0.04), lambertMat(0x2FAE6A));
-  door.position.set(0, 0.85, d / 2 + 0.08); g.add(door);
+  door.position.set(0, 0.85, d / 2 + 0.08);
+  g.add(door);
   const doorKnob = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 8), metalMat(0xFFD23F, 0.9, 0.2));
-  doorKnob.position.set(0.22, 0.85, d / 2 + 0.12); g.add(doorKnob);
+  doorKnob.position.set(0.22, 0.85, d / 2 + 0.12);
+  g.add(doorKnob);
 
-  // ---- rooftop detail varies by type ----
-  const roofY = 1.2 + h;
+  // ----------------------------------------------------------------
+  // ROOF — positioned above body top (BASE_H + h)
+  // roofH tracks the apex/top of the roof shape
+  // ----------------------------------------------------------------
+  const roofBase = BASE_H + h; // Y where body top surface is
   let roof;
+  let roofApex = roofBase; // will be updated per type
+
   if (roofType === 'cone') {
-    roof = new THREE.Mesh(new THREE.ConeGeometry(w * 0.72, h * 0.42, 4), lambertMat(roofColor));
-    roof.rotation.y = Math.PI / 4; roof.position.y = roofY + h * 0.18;
+    const rh = h * 0.42;
+    roof = new THREE.Mesh(new THREE.ConeGeometry(w * 0.72, rh, 4), lambertMat(roofColor));
+    roof.rotation.y = Math.PI / 4;
+    roof.position.y = roofBase + rh / 2; // bottom of cone at roofBase
+    roofApex = roofBase + rh;
   } else if (roofType === 'pyramid') {
-    roof = new THREE.Mesh(new THREE.ConeGeometry(w * 0.72, h * 0.38, 4), lambertMat(roofColor));
-    roof.rotation.y = Math.PI / 4; roof.position.y = roofY + h * 0.16;
+    const rh = h * 0.38;
+    roof = new THREE.Mesh(new THREE.ConeGeometry(w * 0.72, rh, 4), lambertMat(roofColor));
+    roof.rotation.y = Math.PI / 4;
+    roof.position.y = roofBase + rh / 2;
+    roofApex = roofBase + rh;
   } else if (roofType === 'dome') {
-    roof = new THREE.Mesh(new THREE.SphereGeometry(w * 0.55, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2), lambertMat(roofColor));
-    roof.position.y = roofY;
-  } else { // flat roof — parapet + rooftop clutter
-    roof = new THREE.Mesh(new THREE.BoxGeometry(w + 0.3, 0.5, d + 0.3), lambertMat(roofColor));
-    roof.position.y = roofY + 0.2;
+    const rr = w * 0.55;
+    roof = new THREE.Mesh(
+      new THREE.SphereGeometry(rr, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2),
+      lambertMat(roofColor)
+    );
+    roof.position.y = roofBase; // flat side of hemisphere sits on body top
+    roofApex = roofBase + rr;
+  } else {
+    // flat parapet
+    const rh = 0.5;
+    roof = new THREE.Mesh(new THREE.BoxGeometry(w + 0.3, rh, d + 0.3), lambertMat(roofColor));
+    roof.position.y = roofBase + rh / 2;
+    roofApex = roofBase + rh;
   }
-  roof.castShadow = true; g.add(roof);
+  roof.castShadow = true;
+  g.add(roof);
 
-  // rooftop props for flat/dome (AC unit, antenna, water tank)
+  // Rooftop props (flat + dome only) — all placed above roofApex
   if (roofType === 'flat' || roofType === 'dome') {
-    // AC unit box
-    const ac = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.6, 1.0), lambertMat(0x6B7387));
-    ac.position.set(w * 0.2, roofY + 0.7, -d * 0.1); ac.castShadow = true; g.add(ac);
-    // antenna
-    const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 2.2, 6), lambertMat(0x3A3F55));
-    ant.position.set(-w * 0.25, roofY + 1.3, d * 0.2); g.add(ant);
+    // AC unit: bottom at roofApex
+    const acH = 0.6;
+    const ac = new THREE.Mesh(new THREE.BoxGeometry(1.2, acH, 1.0), lambertMat(0x6B7387));
+    ac.position.set(w * 0.2, roofApex + acH / 2, -d * 0.1);
+    ac.castShadow = true;
+    g.add(ac);
+
+    // Antenna: base at roofApex
+    const antH = 2.2;
+    const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, antH, 6), lambertMat(0x3A3F55));
+    ant.position.set(-w * 0.25, roofApex + antH / 2, d * 0.2);
+    g.add(ant);
     const antTip = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 10), basicMat(0xFF5151));
-    antTip.position.set(-w * 0.25, roofY + 2.4, d * 0.2); g.add(antTip);
-    // water tank (cylinder)
-    const tank = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.5, 0.9, 10), lambertMat(0x4F8CFF));
-    tank.position.set(w * 0.3, roofY + 0.9, d * 0.25); g.add(tank);
+    antTip.position.set(-w * 0.25, roofApex + antH + 0.1, d * 0.2);
+    g.add(antTip);
+
+    // Water tank: bottom at roofApex
+    const tankH = 0.9;
+    const tank = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.5, tankH, 10), lambertMat(0x4F8CFF));
+    tank.position.set(w * 0.3, roofApex + tankH / 2, d * 0.25);
+    g.add(tank);
   }
 
-  // ---- vertical accent stripe down one corner (color-coded) ----
+  // ---- Vertical accent stripe on a body corner ----
   const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.18, h * 0.85, 0.18), lambertMat(accent));
-  stripe.position.set(w / 2 - 0.12, 1.2 + h / 2, d / 2 - 0.12); g.add(stripe);
+  stripe.position.set(w / 2 - 0.12, BASE_H + h / 2, d / 2 - 0.12);
+  g.add(stripe);
 
+  // ---- Optional flag pole: base at roofApex ----
   if (opts.flag) {
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 3, 6), lambertMat(0x6B7387));
-    pole.position.y = roofY + 1.5; g.add(pole);
-    const flag = new THREE.Mesh(new THREE.PlaneGeometry(1, 0.6), basicMat(0x5FCB88));
-    flag.position.set(0.5, roofY + 2.5, 0); g.add(flag);
+    const poleH = 3.0;
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, poleH, 6), lambertMat(0x6B7387));
+    pole.position.y = roofApex + poleH / 2;
+    g.add(pole);
+    const flag = new THREE.Mesh(new THREE.PlaneGeometry(1, 0.6), basicMat(SP_PALETTE.terrain));
+    flag.position.set(0.5, roofApex + poleH, 0);
+    g.add(flag);
   }
   return g;
 }
@@ -329,109 +423,243 @@ export function spawnGrid(n, baseX, baseZ) {
 
 export function make3DClouds(count = 25, radius = 200, heightY = 60) {
   const group = new THREE.Group();
-  const cloudMat = lambertMat(0xFFFFFF); // fluffy white clouds
-  const geo = new THREE.SphereGeometry(1, 12, 12);
-  
+  const cloudMat = lambertMat(SP_PALETTE.cloud);
+  // Shared unit-sphere geometry; each puff is an independently scaled clone
+  const unitGeo = new THREE.SphereGeometry(1, 10, 10);
+
+  // Puff layout relative to cloud-group origin (Y=0 of cloud group)
+  // Base puffs spread along XZ, top puffs raised +2 to +4 units
+  const PUFF_CONFIGS = [
+    { x: 0,    y: 0, z: 0,    sx: 3.5, sy: 2.2, sz: 3.5 },  // centre base
+    { x: -2.8, y: 0, z: 0.5,  sx: 2.8, sy: 1.8, sz: 2.8 },  // left base
+    { x:  2.8, y: 0, z: 0.5,  sx: 2.8, sy: 1.8, sz: 2.8 },  // right base
+    { x:  0.8, y: 0, z:-2.5,  sx: 2.6, sy: 1.6, sz: 2.6 },  // back base
+    { x: -0.8, y: 0, z: 2.5,  sx: 2.4, sy: 1.5, sz: 2.4 },  // front base
+    { x: 0,    y: 3, z: 0,    sx: 2.2, sy: 2.0, sz: 2.2 },  // centre top
+    { x: -1.5, y: 2, z: 0.5,  sx: 1.8, sy: 1.5, sz: 1.8 },  // top-left
+  ];
+
+  const cloudGroups = [];
+
   for (let i = 0; i < count; i++) {
     const cloud = new THREE.Group();
-    const numPuffs = 4 + Math.floor(Math.random() * 4);
-    for(let j=0; j<numPuffs; j++) {
-      const puff = new THREE.Mesh(geo, cloudMat);
-      const s = 5 + Math.random() * 8;
-      puff.scale.set(s, s * 0.6, s);
-      puff.position.set((Math.random()-0.5)*s, (Math.random()-0.5)*s*0.3, (Math.random()-0.5)*s);
+
+    // Deterministic even angle distribution; slight radius jitter per index
+    const angle = (i / count) * Math.PI * 2;
+    const rJitter = radius * (0.85 + (i % 3) * 0.075); // subtle radius variation
+    const yJitter = (i % 5 - 2) * 5; // ±5 variance only
+
+    // Uniform cluster scale so clouds range 6–12 world units wide, 3–6 tall
+    const clusterScale = 0.9 + (i % 4) * 0.25; // 0.9 – 1.65 → ~6–12 wide
+
+    // Determine how many puffs this cloud uses (5 to 7)
+    const numPuffs = 5 + (i % 3); // 5, 6 or 7
+
+    for (let j = 0; j < numPuffs; j++) {
+      const cfg = PUFF_CONFIGS[j];
+      const puff = new THREE.Mesh(unitGeo, cloudMat);
+      puff.scale.set(cfg.sx * clusterScale, cfg.sy * clusterScale, cfg.sz * clusterScale);
+      puff.position.set(cfg.x * clusterScale, cfg.y * clusterScale, cfg.z * clusterScale);
       cloud.add(puff);
     }
-    const a = Math.random() * Math.PI * 2;
-    const r = radius * 0.4 + Math.random() * radius * 0.6;
-    cloud.position.set(Math.cos(a) * r, heightY + Math.random() * 30, Math.sin(a) * r);
-    cloud.rotation.y = Math.random() * Math.PI;
+
+    const baseX = Math.cos(angle) * rJitter;
+    const baseZ = Math.sin(angle) * rJitter;
+    const baseY = heightY + yJitter;
+    cloud.position.set(baseX, baseY, baseZ);
+
+    // Gentle X-drift animation using closure variables
+    const capturedI = i;
+    const capturedBaseX = baseX;
+    cloud.userData.update = (t) => {
+      cloud.position.x = capturedBaseX + Math.sin(t * 0.1 + capturedI * 0.8) * 3;
+    };
+
+    cloudGroups.push(cloud);
     group.add(cloud);
   }
+
+  // Group-level update calls each cloud's own updater
+  group.userData.update = (t) => {
+    for (const c of cloudGroups) c.userData.update(t);
+  };
+
   return group;
 }
 
 export function makeFloatingIslands(count = 8, radius = 180) {
   const group = new THREE.Group();
-  const islandMat = lambertMat(0x5FCB88); // Mint green grass top
-  const dirtMat = lambertMat(0x8B5A2B); // dirt bottom
-  
-  for (let i=0; i<count; i++) {
+  const grassMat = lambertMat(SP_PALETTE.grass);   // 0x5FCB88
+  const dirtMat  = lambertMat(SP_PALETTE.dirt);    // 0x8B5A2B
+  const trunkMat = lambertMat(SP_PALETTE.dirt);
+  const leafMat  = lambertMat(SP_PALETTE.terrain); // 0x5FCB88 darker
+
+  // Geometry constants (shared across all islands)
+  const TOP_R = 10, TOP_H = 2;        // flat disk top
+  const BOT_R = 9,  BOT_H = 15;       // rocky tapered cone under
+  const TRUNK_R = 0.3, TRUNK_H = 2.5; // tree trunk
+  const LEAF_R = 2.5;                  // leaf sphere
+
+  const islandGroups = [];
+
+  for (let i = 0; i < count; i++) {
     const island = new THREE.Group();
-    // top grass
-    const top = new THREE.Mesh(new THREE.CylinderGeometry(8, 7.5, 2, 8), islandMat);
-    top.position.y = 1;
+
+    // ---- Flat top disk: center at Y=0, so top surface at Y = TOP_H/2 = 1 ----
+    const top = new THREE.Mesh(new THREE.CylinderGeometry(TOP_R, TOP_R, TOP_H, 16), grassMat);
+    top.position.y = 0; // group-local: top surface at +TOP_H/2 = +1
     top.castShadow = true; top.receiveShadow = true;
     island.add(top);
-    // bottom dirt cone
-    const bot = new THREE.Mesh(new THREE.ConeGeometry(7.5, 12, 8), dirtMat);
-    bot.position.y = -6;
-    bot.rotation.x = Math.PI;
+
+    // ---- Rocky cone: inverted (point down), attached under the top disk ----
+    // Cone center must be at Y = -(TOP_H/2 + BOT_H/2) = -(1 + 7.5) = -8.5
+    const bot = new THREE.Mesh(new THREE.ConeGeometry(BOT_R, BOT_H, 10), dirtMat);
+    bot.position.y = -(TOP_H / 2 + BOT_H / 2); // -8.5
+    bot.rotation.x = Math.PI; // flip so point faces down
+    bot.castShadow = true;
     island.add(bot);
-    
-    const a = Math.random() * Math.PI * 2;
-    const r = radius * 0.5 + Math.random() * radius * 0.5;
-    island.position.set(Math.cos(a) * r, 20 + Math.random() * 50, Math.sin(a) * r);
+
+    // ---- Tree: trunk base sits on top surface of disk (Y = +TOP_H/2 = +1) ----
+    const trunkBase = TOP_H / 2;                       // +1 in island-local space
+    const trunk = new THREE.Mesh(
+      new THREE.CylinderGeometry(TRUNK_R, TRUNK_R, TRUNK_H, 8),
+      trunkMat
+    );
+    trunk.position.y = trunkBase + TRUNK_H / 2;        // center of trunk
+    island.add(trunk);
+
+    // Leaf sphere sits on trunk top
+    const leafY = trunkBase + TRUNK_H + LEAF_R;        // center of leaf sphere
+    const leaves = new THREE.Mesh(new THREE.SphereGeometry(LEAF_R, 10, 10), leafMat);
+    leaves.position.y = leafY;
+    island.add(leaves);
+
+    // ---- Deterministic placement: evenly-spaced angles, staggered height ----
+    const angle  = (i / count) * Math.PI * 2;
+    const rJitter = radius * (0.7 + (i % 4) * 0.075); // radius variation w/o random
+    const baseY  = 25 + i * 8;  // stagger Y per island index
+
+    island.position.set(
+      Math.cos(angle) * rJitter,
+      baseY,
+      Math.sin(angle) * rJitter
+    );
+    // No Y-rotation — islands look odd spinning
+
+    // Gentle Y-bob animation
+    const capturedI = i;
+    const capturedBaseY = baseY;
+    island.userData.update = (t) => {
+      island.position.y = capturedBaseY + Math.sin(t * 0.4 + capturedI * 1.2) * 1.5;
+    };
+
+    islandGroups.push(island);
     group.add(island);
   }
+
+  // Group-level updater delegates to each island
+  group.userData.update = (t) => {
+    for (const isl of islandGroups) isl.userData.update(t);
+  };
+
   return group;
 }
 
 export function make3DTileFloor(w, l, tileSize, heightFn, color1 = 0x4A90E2, color2 = 0xFFD23F, pits = []) {
-  const widthTiles = Math.ceil((w * 2) / tileSize);
+  const widthTiles  = Math.ceil((w * 2) / tileSize);
   const lengthTiles = Math.ceil(l / tileSize);
-  
-  // Create a slight gap so they look like individual blocks
+
+  // Slight inset gap so tiles read as individual blocks
   const actualSize = tileSize - 0.05;
-  const tileGeo = new THREE.BoxGeometry(actualSize, tileSize * 0.8, actualSize);
-  
-  // High quality shiny material for tiles (Stumble Guys vibe)
-  const mat1 = metalMat(color1, 0.2, 0.4); 
-  const mat2 = metalMat(color2, 0.2, 0.4); 
-  
-  // Allocate extra space since we loop from -2 to lengthTiles + 2
-  const maxTiles = widthTiles * (lengthTiles + 6);
+
+  // Tile height = tileSize * 0.5 (not 0.8 — avoids over-tall blocks)
+  const TILE_H = tileSize * 0.5;
+  const tileGeo = new THREE.BoxGeometry(actualSize, TILE_H, actualSize);
+
+  const mat1 = metalMat(color1, 0.2, 0.4);
+  const mat2 = metalMat(color2, 0.2, 0.4);
+
+  // Extra slots for the border curb tiles (2 rows × widthTiles each)
+  const maxTiles = widthTiles * (lengthTiles + 10);
   const inst1 = new THREE.InstancedMesh(tileGeo, mat1, maxTiles);
   const inst2 = new THREE.InstancedMesh(tileGeo, mat2, maxTiles);
   inst1.castShadow = true; inst1.receiveShadow = true;
   inst2.castShadow = true; inst2.receiveShadow = true;
-  
+
   const m = new THREE.Matrix4();
   let idx1 = 0, idx2 = 0;
-  
+
   const wOffset = (widthTiles * tileSize) / 2;
-  
-  for (let z = -2; z <= lengthTiles + 2; z++) { // Overlap ends slightly
+
+  // ---- Helper: place one tile choosing color by checkerboard ----
+  const placeTile = (x, z, worldX, worldZ, tH, tW, tD) => {
+    // worldY: top surface of tile = heightFn(worldZ)
+    // center of tile = heightFn(worldZ) - tH/2
+    const worldY = heightFn(worldZ) - (tH / 2);
+    const mat4 = new THREE.Matrix4();
+    mat4.makeScale(tW / actualSize, tH / TILE_H, tD / actualSize);
+    mat4.setPosition(worldX, worldY, worldZ);
+    if ((x + z) % 2 === 0) inst1.setMatrixAt(idx1++, mat4);
+    else                    inst2.setMatrixAt(idx2++, mat4);
+  };
+
+  for (let z = -2; z <= lengthTiles + 2; z++) {
     for (let x = 0; x < widthTiles; x++) {
       const worldZ = z * tileSize;
-      const worldX = x * tileSize - wOffset + (tileSize/2);
-      
-      // Check if this tile falls inside any pit
+      const worldX = x * tileSize - wOffset + (tileSize / 2);
+
+      // Pit skip
       let inPit = false;
       for (const p of pits) {
         if (worldZ > p.z0 - tileSize * 0.5 && worldZ < p.z1 + tileSize * 0.5) {
-          inPit = true;
-          break;
+          inPit = true; break;
         }
       }
       if (inPit) continue;
 
-      // Floor Y is exactly at heightFn, block center is offset by half its height
-      const worldY = heightFn(worldZ) - (tileSize * 0.4); 
-      
+      // ---- Standard interior tile ----
+      // worldY: tile center so TOP surface = heightFn(worldZ)
+      const worldY = heightFn(worldZ) - (TILE_H / 2);
       m.makeTranslation(worldX, worldY, worldZ);
-      if ((x + z) % 2 === 0) {
-        inst1.setMatrixAt(idx1++, m);
-      } else {
-        inst2.setMatrixAt(idx2++, m);
-      }
+      if ((x + z) % 2 === 0) inst1.setMatrixAt(idx1++, m);
+      else                    inst2.setMatrixAt(idx2++, m);
     }
   }
+
   inst1.count = idx1; inst2.count = idx2;
   inst1.instanceMatrix.needsUpdate = true;
   inst2.instanceMatrix.needsUpdate = true;
-  
+
   const group = new THREE.Group();
   group.add(inst1, inst2);
+
+  // ---- Border / curb tiles at Z=0 edge and Z=L edge ----
+  // Curb is tileSize*1.1 wide, tileSize*0.6 tall — slightly raised vs interior
+  const CURB_H = tileSize * 0.6;
+  const CURB_W = tileSize * 1.1;
+  const curbGeo = new THREE.BoxGeometry(CURB_W - 0.05, CURB_H, CURB_W - 0.05);
+  const curbMat = metalMat(SP_PALETTE.edge, 0.15, 0.5);
+  const curbInst = new THREE.InstancedMesh(curbGeo, curbMat, widthTiles * 2);
+  curbInst.castShadow = true; curbInst.receiveShadow = true;
+  let ci = 0;
+  const mc = new THREE.Matrix4();
+
+  for (let x = 0; x < widthTiles; x++) {
+    const worldX = x * tileSize - wOffset + (tileSize / 2);
+
+    // Near edge (Z = 0)
+    const z0 = 0;
+    mc.makeTranslation(worldX, heightFn(z0) - CURB_H / 2, z0);
+    curbInst.setMatrixAt(ci++, mc);
+
+    // Far edge (Z = L)
+    const zL = l;
+    mc.makeTranslation(worldX, heightFn(zL) - CURB_H / 2, zL);
+    curbInst.setMatrixAt(ci++, mc);
+  }
+  curbInst.count = ci;
+  curbInst.instanceMatrix.needsUpdate = true;
+  group.add(curbInst);
+
   return group;
 }

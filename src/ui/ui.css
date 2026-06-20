@@ -272,6 +272,12 @@ h1,h2,h3,.fred{font-family:'Fredoka One',cursive;}
 #skin-tag{position:absolute;top:6px;left:50%;transform:translateX(-50%);animation:fadeUp .5s ease both;}
 .glass-pill{background:#FFFFFF;border:2px solid var(--mint);border-radius:50px;padding:8px 20px;display:inline-flex;align-items:center;gap:10px;font-family:'Fredoka One',cursive;font-size:15px;color:var(--text-dark);box-shadow:0 4px 0 rgba(0,0,0,0.1);}
 .st-dot{width:10px;height:10px;border-radius:50%;background:var(--mint);}
+/* decorative VS banner fills the middle of the character stage */
+#stage-vs{display:flex;align-items:center;justify-content:center;gap:18px;margin:auto 0;padding:10px 24px;background:rgba(255,255,255,0.55);backdrop-filter:blur(6px);border:2px dashed var(--mint);border-radius:20px;animation:fadeUp .5s ease .05s both;}
+.vs-side{display:flex;flex-direction:column;align-items:center;line-height:1;}
+.vs-num{font-family:'Fredoka One',cursive;font-size:30px;color:var(--ink-3);}
+.vs-lbl{font-size:9px;letter-spacing:2px;color:var(--text-muted);font-weight:800;margin-top:3px;}
+.vs-mid{font-family:'Fredoka One',cursive;font-size:22px;color:var(--mint);background:var(--ink-3);width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#FFFFFF;}
 #play-stack{display:flex;flex-direction:column;align-items:center;gap:10px;z-index:3;animation:fadeUp .5s ease .1s both;}
 .nav-btn.mega{padding:24px 90px;font-size:38px;border-radius:26px;letter-spacing:4px;}
 #play-sub{font-size:14px;color:var(--text-dark);text-shadow:0 1px 4px #FFFFFF;letter-spacing:1px;text-transform:uppercase;font-weight:900;}
@@ -547,7 +553,7 @@ h1,h2,h3,.fred{font-family:'Fredoka One',cursive;}
 @media(max-width:600px){
   .nav-btn{padding:11px 20px;font-size:16px;}
   .nav-btn.small{padding:7px 14px;font-size:12px;}
-  .nav-btn.mega{padding:16px 50px;font-size:24px;border-radius:18px;}
+  .nav-btn.mega{padding:14px 60px;font-size:22px;border-radius:16px;}
   #top-bar{padding:calc(6px + var(--safe-top)) 8px 4px;}
   .cur-pill{padding:4px 10px;font-size:11px;gap:5px;}
   .cur-ico{width:14px;height:14px;}
@@ -555,24 +561,31 @@ h1,h2,h3,.fred{font-family:'Fredoka One',cursive;}
   .av-ring{width:14px;height:14px;border-width:2px;}
   .pi-name{font-size:12px;}
   .pi-level{font-size:10px;}
-  #news-ticker{margin:0 8px 6px;padding:5px 0;}
-  #ticker-text{font-size:11px;}
-  /* menu 3-col collapses to center-stage focus on mobile */
-  #main-menu .menu-content{grid-template-columns:1fr;grid-template-rows:auto 1fr auto;padding:4px 8px;gap:8px;overflow-y:auto;}
-  #left-panel{padding:10px 12px;order:3;max-height:none;}
-  #left-panel .panel-title:first-child{display:none;}
-  #left-panel .profile-stats{display:none;}
-  #right-panel{padding:10px 12px;order:1;}
-  #map-rail-list{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;}
-  .map-card{padding:7px 9px;gap:8px;}
-  .mc-ico{width:28px;height:28px;}
-  .mc-name{font-size:11px;}
-  .mc-type{font-size:8px;}
-  .online-pill{margin-top:8px;font-size:10px;padding:6px 10px;}
-  #menu-stage{order:2;justify-content:flex-end;padding-bottom:12px;min-height:300px;}
-  .mission-list{flex-direction:row;gap:6px;overflow-x:auto;}
-  .mission{min-width:140px;flex-shrink:0;padding:6px 8px;}
-  #bottom-nav{gap:8px;padding:calc(8px + var(--safe-bot)) 8px;}
+  #news-ticker{margin:0 8px 4px;padding:4px 0;}
+  #ticker-text{font-size:10px;}
+  /* MOBILE MENU: maximize character stage, compact everything else.
+     Left panel hidden (degen pass lives on desktop); right panel becomes
+     a slim horizontal map strip on top; PLAY button docked at bottom. */
+  #main-menu .menu-content{grid-template-columns:1fr;grid-template-rows:auto 1fr;padding:2px 6px;gap:4px;overflow:hidden;}
+  #left-panel{display:none;}
+  #right-panel{padding:8px 10px;order:1;}
+  #right-panel .panel-title{display:none;}
+  #map-rail-list{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;}
+  .map-card{padding:5px 6px;gap:5px;flex-direction:column;text-align:center;border-radius:10px;}
+  .mc-ico{width:24px;height:24px;}
+  .mc-name{font-size:9px;line-height:1.1;}
+  .mc-type{font-size:7px;margin-top:1px;}
+  .online-pill{margin-top:6px;font-size:9px;padding:4px 8px;justify-content:center;}
+  #menu-stage{order:2;justify-content:flex-end;padding-bottom:6px;min-height:0;}
+  #stage-vs{gap:10px;padding:6px 14px;margin:auto 0 4px;}
+  .vs-num{font-size:18px;}
+  .vs-lbl{font-size:7px;}
+  .vs-mid{font-size:14px;width:30px;height:30px;}
+  .glass-pill{padding:4px 12px;font-size:11px;}
+  #skin-tag{top:2px;}
+  #play-stack{gap:4px;}
+  #play-sub{font-size:10px;}
+  #bottom-nav{gap:8px;padding:calc(6px + var(--safe-bot)) 8px;}
   .nav-btn.secondary{padding:9px 16px;font-size:13px;gap:8px;}
   .bn-ico{width:14px;height:14px;}
   #result-card{padding:22px 26px;}
