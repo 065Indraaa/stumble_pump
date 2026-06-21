@@ -1,14 +1,19 @@
 // ============================================================
 // STUMBLE PUMP — main.js (entry point)
-// Robust boot: loading bar ALWAYS completes (graceful degradation
-// if physics WASM fails), per-stage logging, defensive error handling
-// so a single bad element never freezes the boot screen.
+// Boot sequence (D1-only, no localStorage fallback):
+//   1. Health gate — ping /api/health. If it fails, show a persistent
+//      "Connecting to server…" overlay (the game does NOT start without D1).
+//   2. Tokenomics landing — full-screen premium landing shown FIRST (before
+//      the loading screen). The "ENTER GAME →" button starts the real boot.
+//   3. Loading bar + physics init (graceful degradation if WASM fails).
+//   4. Auth check → menu (if logged in) or auth screen.
 // ============================================================
 import { init as initPhysics, isReady as physicsReady } from './core/PhysicsWorld.js';
 import { setFrameCallback, startLoop, setQuality } from './core/Engine.js';
 import { initMobileControls, mobileJumpBtn, mobileDiveBtn, mobileEmoteBtn } from './core/InputManager.js';
 import { isMobile } from './config/constants.js';
 import * as Auth from './store/auth.js';
+import { API } from './store/api.js';
 import {
   wireAll, frame, showAuth, enterMenu, applyProfile,
 } from './GameController.js';
@@ -89,6 +94,31 @@ function hideLoadingScreen(after) {
   }, 500);
 }
 
+// ============================================================
+// STEP 1 — Health gate (D1-only requirement)
+// ============================================================
+async function healthGate() {
+  // Try repeatedly for ~30s; the game refuses to start until D1 is reachable.
+  for (let attempt = 1; attempt <= 60; attempt++) {
+    const r = await API.health();
+    if (r.ok) return true;
+    setStatus(r.network ? `Connecting to server… (attempt ${attempt})` : `Server error: ${r.err}`);
+    await new Promise((res) => setTimeout(res, 500));
+  }
+  setStatus('Could not reach the game server. Check your connection and reload.');
+  return false;
+}
+
+function setStatus(msg) {
+  const el = document.getElementById('boot-debug');
+  if (el) el.textContent = msg;
+  const tip = document.getElementById('loader-tip');
+  if (tip) tip.textContent = msg;
+}
+
+// ============================================================
+// STEP 3 — the actual game boot (physics, wiring, loop)
+// ============================================================
 function boot() {
   log('boot start');
   const loader = startLoadingBar();
@@ -134,7 +164,7 @@ function boot() {
   // 6. finish loading after min display duration AND physics resolved
   const minDisplay = new Promise((res) => setTimeout(res, 1400));
   Promise.all([physicsPromise, minDisplay])
-    .then(() => {
+    .then(async () => {
       loader.finish();
       log('hiding loading screen…');
       if (!physicsReady()) {
@@ -142,8 +172,14 @@ function boot() {
         // show menu screens (which only need rendering, not simulation).
         console.warn('[boot] physics NOT ready — entering screens in degraded mode');
       }
+      // Restore the session from the server (D1 is authoritative). If a token
+      // exists in sessionStorage, /api/me rehydrates the profile; otherwise
+      // the player lands on the auth screen.
+      let prof = null;
+      try {
+        if (API.getToken?.()) prof = await Auth.me();
+      } catch (e) { console.warn('[boot] session rehydrate failed', e); }
       hideLoadingScreen(() => {
-        const prof = Auth.session();
         if (prof) {
           try { log('entering menu…'); applyProfile(prof); enterMenu(); }
           catch (e) { console.error('[boot] enterMenu failed', e); showFatal('Menu error: ' + (e?.message || e)); }
@@ -171,4 +207,37 @@ window.addEventListener('unhandledrejection', (e) => {
   console.error('[unhandledrejection]', e.reason);
 });
 
-boot();
+// ============================================================
+// ENTRY — health gate → tokenomics landing → ENTER GAME → boot()
+// ============================================================
+(async function start() {
+  log('start: health gate');
+  const ok = await healthGate();
+  if (!ok) {
+    const o = document.getElementById('err-overlay');
+    if (o) {
+      o.style.display = 'flex';
+      const m = document.getElementById('err-msg');
+      if (m) m.textContent = 'The game server is unreachable. Please check your connection and reload.';
+    }
+    return;
+  }
+  log('health OK — showing tokenomics landing');
+  // The landing's "ENTER GAME" button calls window.__spBoot().
+  window.__spBoot = boot;
+  showTokenomicsLanding();
+})();
+
+// Lazy-load the tokenomics landing (kept out of the hot path so first paint
+// isn't blocked by its module). Falls back to a direct boot if it fails.
+async function showTokenomicsLanding() {
+  try {
+    const { TokenomicsLanding } = await import('./ui/TokenomicsLanding.js');
+    TokenomicsLanding.show(() => {
+      try { window.__spBoot(); } catch (e) { showFatal('Boot error: ' + (e?.message || e)); }
+    });
+  } catch (e) {
+    console.warn('[boot] tokenomics landing failed to load, booting directly', e);
+    boot();
+  }
+}

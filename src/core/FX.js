@@ -102,6 +102,55 @@ export function spawnConfettiBurst(pos, count = 60) {
   }
 }
 
+// ---- Jump-launch dust puff (takeoff feel) ----
+// A quick outward ring of dust at the feet when the player jumps, mirroring
+// the landing dust. Cheap (4 particles), big game-feel payoff.
+export function spawnJumpDust(pos) {
+  if (!FX.dust) return;
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2;
+    FX.dust.spawn(
+      new THREE.Vector3(pos.x, pos.y + 0.05, pos.z),
+      new THREE.Vector3(Math.cos(a) * 1.8, 0.6 + Math.random() * 0.5, Math.sin(a) * 1.8),
+      0.35, 0.9, 0xddddcc
+    );
+  }
+}
+
+// ---- Hazard hit debris burst (ragdoll onset) ----
+// When a candle/sweeper/pendulum knocks the player, spray colored sparks +
+// dust outward from the hit point so the impact reads clearly. Reuses the
+// existing spark + dust pools (no new allocation).
+export function spawnHitBurst(pos, dir) {
+  if (!FX.spark) return;
+  const d = dir ? dir.clone().normalize() : new THREE.Vector3(0, 1, 0);
+  for (let i = 0; i < 10; i++) {
+    const spread = new THREE.Vector3(
+      d.x + (Math.random() - 0.5) * 1.5,
+      d.y + Math.random() * 1.2,
+      d.z + (Math.random() - 0.5) * 1.5
+    );
+    FX.spark.spawn(
+      new THREE.Vector3(pos.x, pos.y + 0.3, pos.z),
+      spread.multiplyScalar(3 + Math.random() * 2),
+      0.5 + Math.random() * 0.3, 1,
+      Math.random() > 0.5 ? 0xff6b00 : 0xffd700
+    );
+  }
+  // a few dust puffs too
+  if (FX.dust) {
+    for (let i = 0; i < 3; i++) {
+      FX.dust.spawn(
+        new THREE.Vector3(pos.x, pos.y + 0.2, pos.z),
+        new THREE.Vector3((Math.random() - 0.5) * 2, 1 + Math.random(), (Math.random() - 0.5) * 2),
+        0.4, 1, 0xbbbbaa
+      );
+    }
+  }
+  // shockwave ring on the hit for extra punch
+  spawnShockwave(pos, 0xFF6b00);
+}
+
 // ============================================================
 // SHADER-BASED VFX (mesh effects, not point sprites)
 // Each class exposes update(dt) + dispose() so updateFX/disposeFX pick them

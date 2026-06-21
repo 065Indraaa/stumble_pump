@@ -3,15 +3,15 @@
 // ============================================================
 
 // --- Physics (matched to legacy feel; Rapier uses same numbers) ---
-export const GRAVITY = 23.0;            // world gravity along -Y (slightly lower than 26 legacy to feel floaty/cartoon)
-export const MOVE_SPEED = 7.5;          // max horizontal speed (units/s)
-export const ACCEL = 60.0;              // horizontal acceleration toward wish dir
+export const GRAVITY = 21.0;            // world gravity along -Y (slightly lower for better air time)
+export const MOVE_SPEED = 8.5;          // max horizontal speed (units/s)
+export const ACCEL = 65.0;              // horizontal acceleration toward wish dir
 export const FRICTION = 12.0;           // deceleration when no input
-export const JUMP_VELOCITY = 9.5;       // initial jump velocity (up)
-export const DIVE_SPEED = 13.0;         // horizontal dive impulse
+export const JUMP_VELOCITY = 10.5;      // initial jump velocity (up)
+export const DIVE_SPEED = 14.5;         // horizontal dive impulse
 export const DIVE_LOCK = 0.5;           // dive lockout (s)
-export const COYOTE_TIME = 0.10;        // grace period after leaving ledge
-export const JUMP_BUFFER = 0.12;        // jump press buffer
+export const COYOTE_TIME = 0.15;        // grace period after leaving ledge
+export const JUMP_BUFFER = 0.18;        // jump press buffer
 export const CHARACTER_RADIUS = 0.42;
 export const CHARACTER_HEIGHT = 1.0;    // capsule half-height-ish for collider
 export const FIXED_DT = 1 / 60;         // Rapier fixed timestep

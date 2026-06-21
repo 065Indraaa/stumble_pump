@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import { scene, renderer } from '../core/Engine.js';
 import { lambertMat, basicMat } from '../core/AssetFactory.js';
-import { clearScene, make3DClouds, makeFloatingIslands, makeGroundDisc, makeHillsRing, makeForestScatter } from './env.js';
+import { clearScene, make3DClouds, makeFloatingIslands, makeGroundDisc, makeHillsRing, makeForestScatter, makeSkyDome } from './env.js';
 import { makeHexPlatform, warnPlatform, updateHexPlatform } from '../entities/HexPlatform.js';
 import { SFX } from '../core/AudioManager.js';
 import { SP_PALETTE } from '../config/constants.js';
@@ -17,6 +17,8 @@ export function buildRugpull() {
   renderer.setClearColor(SP_PALETTE.sky);
   scene.fog = new THREE.Fog(SP_PALETTE.fog, 55, 200);
   const group = new THREE.Group(); scene.add(group);
+  // Themed playful skydome (mint→blue gradient) for the rug casino
+  scene.add(makeSkyDome('rugpull'));
   group.add(make3DClouds(20, 150, 45));
   group.add(makeFloatingIslands(8, 125));
   // distant rolling hills ring fills the horizon

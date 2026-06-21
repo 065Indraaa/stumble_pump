@@ -204,20 +204,22 @@ export function buildLiquidationLane() {
     backdrop: 'liquidation',
     heightFn: (z) => { const u = z / L; return H * (1 - u) + Math.sin(u * Math.PI * 5) * 2.5; },
     candles: true, tramps: 3, lava: true,
+    // Decongested: dropped one pit (was 5 → 4) and widened movers (w3/d3.5 →
+    // w4/d4.5) so the edge-to-mover gap is within a flat jump on this narrow
+    // (W=11) track. Also widened W slightly to 12 for breathing room.
     pits: [
-      { z0: L * 0.18, z1: L * 0.26 }, { z0: L * 0.35, z1: L * 0.43 },
-      { z0: L * 0.52, z1: L * 0.60 }, { z0: L * 0.70, z1: L * 0.78 },
-      { z0: L * 0.85, z1: L * 0.92 },
+      { z0: L * 0.18, z1: L * 0.25 }, { z0: L * 0.36, z1: L * 0.43 },
+      { z0: L * 0.55, z1: L * 0.62 }, { z0: L * 0.75, z1: L * 0.82 },
     ],
     movers: [
-      { z: L * 0.22, x0: -6, x1: 6, w: 3, d: 3.5, sp: 1.0, color: SP_PALETTE.terrain },
-      { z: L * 0.39, x0: 6, x1: -6, w: 3, d: 3.5, sp: 1.1, color: SP_PALETTE.terrain },
-      { z: L * 0.56, x0: -5, x1: 5, w: 3, d: 3.5, sp: 1.2, color: SP_PALETTE.terrain },
-      { z: L * 0.74, x0: 5, x1: -5, w: 3, d: 3.5, sp: 1.3, color: SP_PALETTE.terrain },
-      { z: L * 0.89, x0: -4, x1: 4, w: 3, d: 3.5, sp: 1.4, color: SP_PALETTE.terrain },
+      { z: L * 0.215, x0: -6, x1: 6, w: 4, d: 4.5, sp: 0.9, color: SP_PALETTE.terrain },
+      { z: L * 0.395, x0: 6, x1: -6, w: 4, d: 4.5, sp: 1.0, color: SP_PALETTE.terrain },
+      { z: L * 0.585, x0: -5, x1: 5, w: 4, d: 4.5, sp: 1.1, color: SP_PALETTE.terrain },
+      { z: L * 0.785, x0: 5, x1: -5, w: 4, d: 4.5, sp: 1.2, color: SP_PALETTE.terrain },
     ],
-    sweepers: [{ z: L * 0.30, sp: 2.6 }, { z: L * 0.48, sp: -3.0 }, { z: L * 0.65, sp: 3.2 }, { z: L * 0.82, sp: -3.5 }],
-    pendulums: [{ z: L * 0.45, amp: 1.1, sp: 2.0 }, { z: L * 0.80, amp: 1.2, sp: 2.4 }],
+    // Sweeper speeds capped ≤ ±2.6 (was up to -3.5 — unreasonable on W=11).
+    sweepers: [{ z: L * 0.30, sp: 2.2 }, { z: L * 0.48, sp: -2.4 }, { z: L * 0.68, sp: 2.6 }, { z: L * 0.88, sp: -2.5 }],
+    pendulums: [{ z: L * 0.45, amp: 0.9, sp: 1.8 }, { z: L * 0.80, amp: 1.0, sp: 2.0 }],
     finishText: 'SURVIVED',
     killY: -30,
     buildDecor,

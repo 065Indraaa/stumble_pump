@@ -180,9 +180,9 @@ export function buildBondingCurve() {
       { z: L * 0.72, sp: -2.8 }, { z: L * 0.85, sp: 3.0 },
     ],
     pendulums: [
-      { z: L * 0.35, x: 0, amp: 1.0, sp: 1.6 },
-      { z: L * 0.65, x: 2, amp: 1.2, sp: 1.9 },
-      { z: L * 0.80, x: -2, amp: 1.1, sp: 2.2 },
+      { z: L * 0.35, x: 0, amp: 0.8, sp: 1.4 },
+      { z: L * 0.65, x: 2, amp: 0.9, sp: 1.7 },
+      { z: L * 0.80, x: -2, amp: 0.9, sp: 1.9 },
     ],
     pits: [{ z0: L * 0.50, z1: L * 0.56 }],
     movers: [{ z: L * 0.53, x0: -8, x1: 8, w: 4, d: 5, sp: 0.9, color: 0x4F8CFF }],

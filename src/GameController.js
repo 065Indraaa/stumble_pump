@@ -7,21 +7,26 @@
 // ============================================================
 import * as THREE from 'three';
 import { scene, renderer, camera, shakeCamera, tickCamShake, setSunFollowTarget, MOBILE } from './core/Engine.js';
-import { initFX, updateFX, spawnConfettiBurst } from './core/FX.js';
+import { initFX, updateFX, spawnConfettiBurst, spawnShockwave } from './core/FX.js';
 import { SFX, startAmbient, stopAmbient, isMuted, setMute as setAudioMute } from './core/AudioManager.js';
 import { setMusicMode, stopMusic } from './core/MusicManager.js';
 import { state as G, register, showScreen, setMode, tick as smTick, disposeActors, disposeMap } from './core/SceneManager.js';
 import { Input, setTouchScreenMode } from './core/InputManager.js';
 import { Net } from './net/NetManager.js';
 import * as Auth from './store/auth.js';
+import { API } from './store/api.js';
 import { Rooms, roomCountdownStr } from './store/rooms.js';
 import { History } from './store/history.js';
 import { Actor } from './character/Actor.js';
 import { spawnBot } from './character/BotController.js';
 import { SKINS, EMOTES, TRAILS } from './character/skins.js';
 import { lambertMat, metalMat, pbrMat } from './core/AssetFactory.js';
-import { clearScene, make3DClouds, makeFloatingIslands, makeGroundDisc, makeHillsRing, makeForestScatter, makeBannerArch } from './levels/env.js';
+import { clearScene, make3DClouds, makeFloatingIslands, makeGroundDisc, makeHillsRing, makeForestScatter, makeBannerArch, makeSkyDome } from './levels/env.js';
 import { MOVE_SPEED, SP_PALETTE } from './config/constants.js';
+// ---- Season 1 Tokenomics ----
+import { SP, SP_WIN_REWARD, SP_QUALIFY_REWARD, SP_ELIM_REWARD, COIN_WIN_REWARD, COIN_QUALIFY_REWARD, COIN_ELIM_REWARD } from './store/tokenomics.js';
+import { TokenomicsModal } from './ui/TokenomicsModal.js';
+import { WithdrawModal } from './ui/WithdrawModal.js';
 
 import { buildLobby } from './levels/lobby.js';
 import { buildBondingCurve } from './levels/bondingCurve.js';
@@ -62,6 +67,23 @@ function _updateSky(parent, t) {
   }
 }
 
+// Minimal ctx for the menu/customize preview actor. The preview only needs
+// ground height (so it stands ON the raised hex stage, not floating above or
+// clipping through it) and a kill-floor far below. Calling the full Actor
+// update path also runs the contact-shadow placement every frame.
+const PREVIEW_STAGE_Y = 0.4;
+const _previewCtx = {
+  groundHeightAt(x, z) {
+    // Hex showcase stage: solid disc at STAGE_TOP_Y. Outside the disc → no
+    // ground (preview is clamped to centre anyway).
+    if (Math.hypot(x, z) < 6) return PREVIEW_STAGE_Y;
+    return null;
+  },
+  killY: -50,
+  onFell() {},
+  checkActor() {},
+};
+
 function randomBotSkinLocal() { const k = Object.keys(SKINS); return k[Math.floor(Math.random() * k.length)]; }
 
 export function applyProfile(prof) {
@@ -80,6 +102,31 @@ export function updateTopBar() {
   document.getElementById('player-level').textContent = u.level;
   document.getElementById('gem-count').textContent = u.gems;
   document.getElementById('coin-count').textContent = (u.coins || 0).toLocaleString();
+  // Party Pass stats (menu left panel)
+  const sw = document.getElementById('stat-wins'); if (sw) sw.textContent = u.wins || 0;
+  const sm = document.getElementById('stat-matches'); if (sm) sm.textContent = u.games || 0;
+  const ss = document.getElementById('stat-streak'); if (ss) ss.textContent = u.wins || 0;
+  updateSPHud();
+}
+
+// ---- Season 1: $SP HUD update ----
+function updateSPHud() {
+  const el = document.getElementById('sp-count');
+  if (!el) return;
+  el.textContent = SP.balance().toLocaleString();
+}
+
+// ---- Season 1: floating +N $SP reward animation ----
+function showSPReward(amount) {
+  const el = document.getElementById('sp-reward');
+  if (!el) return;
+  el.textContent = `+${amount} $SP`;
+  el.classList.remove('hidden', 'sp-fly');
+  void el.offsetWidth; // force reflow so animation retriggers
+  el.classList.add('sp-fly');
+  const pill = document.getElementById('sp-pill');
+  if (pill) { pill.classList.remove('sp-earned'); void pill.offsetWidth; pill.classList.add('sp-earned'); }
+  setTimeout(() => { el.classList.add('hidden'); el.classList.remove('sp-fly'); updateSPHud(); }, 2100);
 }
 
 // ============================================================
@@ -98,6 +145,8 @@ function buildPreview() {
   const group = new THREE.Group(); scene.add(group);
 
   // ── SKY DECOR ───────────────────────────────────────────────────────
+  // Deep navy skydome (gradient sphere) matching the loading-screen brand.
+  scene.add(makeSkyDome('menu'));
   group.add(make3DClouds(22, 120, 42));
   group.add(makeFloatingIslands(5, 95));
   // distant rolling hills ring fills the horizon (no empty sky backdrop)
@@ -259,6 +308,12 @@ function buildPreview() {
   if (G.preview) { G.preview.dispose(); }
   G.preview = new Actor(shared.selectedSkin, true, 'player');
   G.preview.pos.set(0, STAGE_TOP_Y, 0);
+  G.preview.vel.set(0, 0, 0);
+  G.preview.grounded = true;
+  G.preview.checkpoint.set(0, STAGE_TOP_Y, 0);
+  // Force the contact-shadow blob onto the stage surface immediately (it
+  // defaults to Y=0.02 which sits below the raised hex podium otherwise).
+  G.preview._updateContactShadow?.(_previewCtx);
   // update menu skin tag
   const skinNameEl = document.getElementById('skin-name');
   if (skinNameEl && SKINS[shared.selectedSkin]) skinNameEl.textContent = SKINS[shared.selectedSkin].name;
@@ -272,6 +327,62 @@ export function enterMenu() {
   showScreen('main-menu');
   updateTopBar();
   setMode('menu');
+  // Kick off the realtime D1 sync poller (balance/coins/history refresh
+  // every 3s so the HUD reflects server-side changes like tournament entries
+  // or admin actions). Also broadcasts presence for the "X ONLINE" counter.
+  startRealtimeSync();
+  // Season 1: show the full tokenomics landing on first open (trust builder)
+  TokenomicsModal.checkAndShow();
+}
+
+// ---- Realtime D1 sync ----
+// Polls /api/me every 3s and refreshes the in-memory profile + $SP cache.
+// Also heartbeats presence for the online count. Idempotent + self-clearing.
+let _syncInterval = null;
+let _presenceInterval = null;
+function startRealtimeSync() {
+  if (_syncInterval) return;
+  _syncInterval = setInterval(async () => {
+    try {
+      const r = await SP.refresh();
+      if (r && r.ok && r.profile) {
+        // Merge server-authoritative fields into the cached profile (coin/SP
+        // changes from other devices, admin withdrawals, tournament fees).
+        const u = shared.user;
+        if (u) {
+          u.coins = r.profile.coins ?? u.coins;
+          u.gems = r.profile.gems ?? u.gems;
+          u.level = r.profile.level ?? u.level;
+          u.wins = r.profile.wins ?? u.wins;
+          u.games = r.profile.games ?? u.games;
+          u.ownedSkins = r.profile.ownedSkins || u.ownedSkins;
+        }
+        updateTopBar();
+        WithdrawModal.refreshIfOpen();
+      }
+    } catch (e) { /* transient — keep polling */ }
+  }, 3000);
+  if (!_presenceInterval) {
+    _presenceInterval = setInterval(() => {
+      API.heartbeat().catch(() => {});
+      API.onlineCount().then((r) => {
+        if (r && r.ok) {
+          const el = document.getElementById('online-count');
+          if (el) el.textContent = (r.online || 0).toLocaleString();
+        }
+      }).catch(() => {});
+    }, 15000);
+    API.heartbeat().catch(() => {});
+    API.onlineCount().then((r) => {
+      if (r && r.ok) {
+        const el = document.getElementById('online-count');
+        if (el) el.textContent = (r.online || 0).toLocaleString();
+      }
+    }).catch(() => {});
+  }
+}
+function stopRealtimeSync() {
+  if (_syncInterval) { clearInterval(_syncInterval); _syncInterval = null; }
 }
 
 export function enterCustomize() {
@@ -302,19 +413,22 @@ export function enterLobby() {
     G._specTimer = 0;
   } else {
     G.player = new Actor(shared.selectedSkin, true, 'player');
+    G.player.trailKey = shared.selectedTrail;   // equipped trail cosmetic
     // spawn just above the center pad (which is raised to PAD_H=0.35)
     G.player.pos.set(0, 1.5, 0);
     G.player.checkpoint.copy(G.player.pos);
     G.actors = [G.player];
   }
-  // 60s waiting timer: real players join via matchmaking; bots trickle in
-  // only after a grace window so the lobby doesn't feel instantly flooded.
+  // Real-players-only lobby (no bots). A match auto-starts once a MINIMUM
+  // QUORUM of real players is present. fieldSize is derived from the actual
+  // matchmaking headcount, not hardcoded 32. We re-poll matchmaking every
+  // few seconds so if our room fills up or starts without us, we get routed
+  // into another open room instead of being stranded.
   G.data = {
-    spawnTimer: 6.0,      // grace period before first bot (let real players join)
+    requeueTimer: 4.0,   // re-run matchmaking this often to find a fuller room
     target: 32,
     countdown: -1,
     cdTimer: 0,
-    waitTimer: 60,        // 60s lobby waiting clock
     waitStarted: true,
     forceStart: false,
     matchmade: false,
@@ -327,21 +441,15 @@ export function enterLobby() {
   document.getElementById('lobby-count').textContent = isHostSpectator ? '0' : '1';
   Net.connect();
   Net.setLocal({ name: shared.user?.name || 'Player', skin: shared.selectedSkin });
-  // matchmaking: this fills an EXISTING public room first (Net.joinMatchmaking
-  // picks a room with free slots; only creates a new one if none exist)
-  // Room matches (incl. host-spectator) NEVER use quick-play matchmaking —
-  // they already have a dedicated room.
+  // Matchmaking fills the FULLEST public room with a free slot (see NetManager).
+  // Private rooms + host-spectators keep their dedicated room (no matchmaking).
   if (!isRoomMatch && !isHostSpectator) Net.joinMatchmaking();
   Net.setArena(true);   // broadcast our position so real peers see us
   setMode('lobby');
 }
 
-function spawnLobbyBot() {
-  if (G.actors.length >= 32) return;
-  const sp = new THREE.Vector3((Math.random() - 0.5) * 20, 8, (Math.random() - 0.5) * 20);
-  const b = spawnBot(sp, 'lobbyBot');
-  G.actors.push(b);
-}
+// Minimum real players (including us) required to start a public match.
+const LOBBY_MIN_QUORUM = 4;
 
 function updateLobby(dt, t) {
   const d = G.data;
@@ -357,28 +465,15 @@ function updateLobby(dt, t) {
     syncRemoteActors(dt, t, G.map, 'lobbyBot');
   }
   const realPeerCount = Net.roomPeersList ? Net.roomPeersList().length : 0;
-  const totalActors = G.actors.length;
+  const livePlayers = 1 + realPeerCount;   // us + remote peers
 
-  // ---- 60s waiting clock (players only — spectators don't drive the timer) ----
-  if (!spectator && d.waitStarted && d.countdown < 0) {
-    d.waitTimer -= dt;
-    if (d.waitTimer <= 0) {
-      // time's up — start the match with whoever is here
-      d.waitTimer = 0;
-      d.forceStart = true;
-    }
-  }
-
-  // ---- bot trickle: ONLY in public quick-play (never in private rooms,
-  //      and never for host spectators — they watch real players only). ----
-  d.spawnTimer -= dt;
-  if (!d.isRoomMatch && !spectator) {
-    const gracePassed = (60 - d.waitTimer) > 6;
-    const maxBots = Net.connected ? Math.max(0, 6 - realPeerCount) : 28; // offline: fill up
-    const botCount = G.actors.filter((a) => !a.isPlayer && !a._remote).length;
-    if (gracePassed && d.spawnTimer <= 0 && totalActors < d.target && botCount < maxBots) {
-      d.spawnTimer = 2.5 + Math.random() * 2.0;  // slow trickle (every ~3-4s)
-      spawnLobbyBot();
+  // ---- re-queue matchmaking periodically so we land in a fuller room,
+  //      and recover if our room filled/started before we joined. ----
+  if (!spectator && !d.isRoomMatch && Net.connected) {
+    d.requeueTimer -= dt;
+    if (d.requeueTimer <= 0) {
+      d.requeueTimer = 4.0;
+      Net.joinMatchmaking();
     }
   }
 
@@ -386,38 +481,43 @@ function updateLobby(dt, t) {
   G.map.update(dt, t);
 
   // ---- HUD ----
-  if (spectator) {
-    document.getElementById('lobby-count').textContent = realPeerCount;
-  } else {
-    document.getElementById('lobby-count').textContent = Math.min(1 + realPeerCount + (totalActors - 1 - (G.actors.filter((a) => !a.isPlayer && !a._remote).length)), 32);
-  }
+  document.getElementById('lobby-count').textContent = Math.min(livePlayers, 32);
   const statusEl = document.getElementById('net-status');
   const fs = document.getElementById('force-start');
   if (spectator) {
-    // Host spectator: watching, can't force-start from lobby (already started)
     statusEl.textContent = realPeerCount > 0 ? `SPECTATING · ${realPeerCount} players` : 'Waiting for players to join…';
     fs.classList.add('hidden');
   } else if (d.isRoomMatch) {
-    // private room: show waiting-for-friends state, host can start anytime
-    if (realPeerCount > 0) statusEl.textContent = `${realPeerCount + 1} players in room · waiting to start`;
-    else statusEl.textContent = `Waiting for friends… ${Math.ceil(d.waitTimer)}s`;
+    // private room: host can start anytime once at least 2 are present
+    if (realPeerCount > 0) statusEl.textContent = `${livePlayers} players in room · ready to start`;
+    else statusEl.textContent = `Waiting for friends…`;
     const isRoomHost = Net.roomMeta && Net.roomMeta.host;
-    fs.classList.toggle('hidden', !isRoomHost);
-    fs.textContent = isRoomHost ? 'START MATCH' : 'START WITH BOTS';
+    fs.classList.toggle('hidden', !isRoomHost || livePlayers < 2);
+    fs.textContent = 'START MATCH';
   } else if (Net.connected) {
-    if (realPeerCount > 0) statusEl.textContent = `${realPeerCount + 1} live players · waiting…`;
-    else statusEl.textContent = `Searching for players… ${Math.ceil(d.waitTimer)}s`;
-    const canForce = realPeerCount >= 1 || (60 - d.waitTimer) > 20;
-    fs.classList.toggle('hidden', !canForce);
-    fs.textContent = 'START WITH BOTS';
+    // public quick-play: show quorum progress, no manual bot start
+    const need = Math.max(0, LOBBY_MIN_QUORUM - livePlayers);
+    if (need > 0) statusEl.textContent = `Waiting for ${need} more player${need === 1 ? '' : 's'}… (${livePlayers}/${LOBBY_MIN_QUORUM})`;
+    else statusEl.textContent = `${livePlayers} players ready · starting soon…`;
+    fs.classList.add('hidden');   // no START WITH BOTS button anymore
   } else {
-    statusEl.textContent = Net.failed ? 'Offline mode — bots only' : 'Connecting…';
-    fs.classList.toggle('hidden', totalActors < 2);
-    fs.textContent = 'START WITH BOTS';
+    // D1-only build: no offline bot mode. The health gate already refused to
+    // boot without the server, so we should always be connected here; this
+    // branch is a defensive fallback.
+    statusEl.textContent = Net.failed ? 'Connection lost — reconnecting…' : 'Connecting…';
+    fs.classList.add('hidden');
   }
 
-  // ---- start trigger: room full, force-start, OR 60s elapsed (players only) ----
-  if (!spectator && (totalActors >= 32 || d.forceStart)) {
+  // ---- start trigger (players only) ----
+  // Public: auto-start when the quorum is met. Private room: host force-start.
+  let shouldStart = false;
+  if (!spectator) {
+    if (d.isRoomMatch) shouldStart = !!d.forceStart;
+    else shouldStart = Net.connected && livePlayers >= LOBBY_MIN_QUORUM;
+  }
+  if (shouldStart) {
+    // Size the field to the actual player count (no bot padding).
+    d.fieldSize = Math.max(2, Math.min(32, livePlayers));
     if (d.countdown < 0) { d.countdown = 5; d.cdTimer = 0; }
     d.cdTimer += dt;
     const cdEl = document.getElementById('countdown-overlay');
@@ -426,6 +526,10 @@ function updateLobby(dt, t) {
     document.getElementById('lobby-cd').textContent = n;
     if (n > 0 && Math.floor(d.cdTimer) !== d._lastBeep) { d._lastBeep = Math.floor(d.cdTimer); SFX.beep(); }
     if (d.cdTimer >= 5) { cdEl.classList.add('hidden'); enterRoulette(); }
+  } else if (d.countdown >= 0) {
+    // someone left mid-countdown and dropped below quorum — cancel
+    d.countdown = -1;
+    document.getElementById('countdown-overlay').classList.add('hidden');
   }
 }
 
@@ -567,6 +671,7 @@ function enterMatch(mapDef) {
     G._specTimer = 0;
   } else {
     G.player = new Actor(shared.selectedSkin, true, 'player');
+    G.player.trailKey = shared.selectedTrail;   // equipped trail cosmetic
     G.player.pos.copy(sp[0]); G.player.checkpoint.copy(sp[0]);
     snapToGround(G.player);
     G.actors = [G.player];
@@ -591,17 +696,9 @@ function enterMatch(mapDef) {
     a._peerName = peer.name || 'Player';   // retained for spectator result text
     G.actors.push(a); spawnIdx++;
   }
-  // Fill remaining slots with bots — BUT NOT in private room matches,
-  // where friends play exclusively against each other (no bots).
-  if (!G.data.isRoomMatch) {
-    for (let i = spawnIdx; i < fieldSize; i++) {
-      const b = new Actor(randomBotSkinLocal(), false, botBrain);
-      b.pos.copy(sp[i % sp.length]); b.pos.x += (Math.random() - 0.5);
-      b.checkpoint.copy(b.pos);
-      snapToGround(b);
-      G.actors.push(b);
-    }
-  }
+  // No bot fill: real players only (public + private). fieldSize already
+  // reflects the actual live headcount set by updateLobby, so the loop above
+  // spawns exactly the humans present.
   // ensure net is in arena-broadcast mode so peers see us move
   Net.setArena(true);
   G.data.qualifyTarget = Math.ceil(fieldSize / 2);
@@ -659,7 +756,11 @@ function updateMatch(dt, t) {
     if (n !== d.cdShown) {
       d.cdShown = n;
       if (n > 0) { el.textContent = n; SFX.beep(); el.style.animation = 'none'; void el.offsetWidth; el.style.animation = 'popcd .5s'; }
-      else if (n === 0) { el.textContent = 'GO!'; SFX.go(); shakeCamera(0.8, 0.4); }
+      else if (n === 0) {
+        el.textContent = 'GO!'; SFX.go(); shakeCamera(0.8, 0.4);
+        // Round-start pulse ring on the player's spawn so the start reads with weight
+        if (G.player) spawnShockwave(G.player.pos, 0x5FCB88);
+      }
     }
     if (d.cd <= 0) { d.phase = 'run'; d.locked = false; el.classList.add('hidden'); }
     G.actors.forEach((a) => { a.anim.set('idle'); a.anim.update(dt, t); });
@@ -771,8 +872,19 @@ function showResult(qualified) {
   const u = shared.user;
   if (u) {
     u.games = (u.games || 0) + 1;
-    if (qualified) { u.coins = (u.coins || 0) + (isFinalRound ? 300 : 60); if (isFinalRound) { u.wins = (u.wins || 0) + 1; u.level = (u.level || 1) + 1; } }
-    else { u.coins = (u.coins || 0) + 20; }
+    if (qualified) {
+      // Reward model: coins (cosmetic currency) + $SP (withdrawable token)
+      u.coins = (u.coins || 0) + (isFinalRound ? COIN_WIN_REWARD : COIN_QUALIFY_REWARD);
+      if (isFinalRound) { u.wins = (u.wins || 0) + 1; u.level = (u.level || 1) + 1; }
+      // Season 1: award $SP (win or qualify) — async D1 write
+      const spAmt = isFinalRound ? SP_WIN_REWARD : SP_QUALIFY_REWARD;
+      SP.earnSP(spAmt, isFinalRound ? 'win' : 'qualify').then((spRes) => {
+        if (spRes.ok) { updateSPHud(); setTimeout(() => showSPReward(spAmt), 800); }
+      }).catch(() => {});
+    } else {
+      u.coins = (u.coins || 0) + COIN_ELIM_REWARD;
+      SP.earnSP(SP_ELIM_REWARD, 'participate').then(() => updateSPHud()).catch(() => {});
+    }
     Auth.save(u); updateTopBar();
   }
   G.data.lastQualified = qualified;
@@ -843,7 +955,16 @@ function showWinnerScreen() {
     map: G.map && G.map.def ? G.map.def.name : 'Unknown',
     isRoom: !!G.data.isRoomMatch,
   });
-  if (u) { u.games = (u.games || 0) + 1; u.coins = (u.coins || 0) + 300; u.wins = (u.wins || 0) + 1; u.level = (u.level || 1) + 1; Auth.save(u); updateTopBar(); }
+  if (u) {
+    u.games = (u.games || 0) + 1; u.coins = (u.coins || 0) + COIN_WIN_REWARD;
+    u.wins = (u.wins || 0) + 1; u.level = (u.level || 1) + 1;
+    Auth.save(u);
+    // Season 1: champion win reward (async D1 write)
+    SP.earnSP(SP_WIN_REWARD, 'win').then((spRes) => {
+      if (spRes.ok) { updateSPHud(); setTimeout(() => showSPReward(SP_WIN_REWARD), 1000); }
+    }).catch(() => {});
+    updateTopBar();
+  }
   p.anim.set('celebrate');
   setMode('winner');
 }
@@ -1129,16 +1250,21 @@ function leaveRoom() {
 
 function showHistory() {
   showScreen('history-screen');
-  const list = History.all();
-  const el = document.getElementById('history-list'); el.innerHTML = '';
-  if (list.length === 0) { el.innerHTML = '<div class="room-empty">No matches yet.<br>Go win some!</div>'; return; }
-  list.forEach((h) => {
-    const row = document.createElement('div'); row.className = 'he-row';
-    const d = new Date(h.date);
-    row.innerHTML = `<div class="he-crown"></div><div class="he-info"><div class="he-name">${h.winnerName}</div><div class="he-meta">${h.map || 'Unknown'} · ${h.players} degens · ${h.rounds} rounds</div></div><div class="he-date">${d.toLocaleDateString()}</div>`;
-    el.appendChild(row);
-  });
+  const el = document.getElementById('history-list');
+  el.innerHTML = '<div class="room-empty">Loading…</div>';
   setMode('history');
+  History.all().then((list) => {
+    el.innerHTML = '';
+    if (list.length === 0) { el.innerHTML = '<div class="room-empty">No matches yet.<br>Go win some!</div>'; return; }
+    list.forEach((h) => {
+      const row = document.createElement('div'); row.className = 'he-row';
+      const d = new Date(h.date);
+      row.innerHTML = `<div class="he-crown"></div><div class="he-info"><div class="he-name">${h.winnerName}</div><div class="he-meta">${h.map || 'Unknown'} · ${h.players} degens · ${h.rounds} rounds</div></div><div class="he-date">${d.toLocaleDateString()}</div>`;
+      el.appendChild(row);
+    });
+  }).catch(() => {
+    el.innerHTML = '<div class="room-empty">Could not load history.</div>';
+  });
 }
 
 // ============================================================
@@ -1284,8 +1410,8 @@ function authResult(r) {
 // WIRE EVERYTHING
 // ============================================================
 export function wireAll() {
-  register('menu', { update: (dt, t) => { if (G.preview) { G.preview.anim.set('idle'); G.preview.anim.update(dt, t); _updateSky(G.preview.root.parent, t); } Net.publish(); Net.prune(); } });
-  register('customize', { update: (dt, t) => { if (G.preview) { G.preview.anim.set('idle'); G.preview.anim.update(dt, t); _updateSky(G.preview.root.parent, t); } } });
+  register('menu', { update: (dt, t) => { if (G.preview) { G.preview.anim.set('idle'); G.preview.anim.update(dt, t); G.preview._syncBody?.(); G.preview._updateContactShadow?.(_previewCtx); } _updateSky(G.preview.root.parent, t); Net.publish(); Net.prune(); } });
+  register('customize', { update: (dt, t) => { if (G.preview) { G.preview.anim.set('idle'); G.preview.anim.update(dt, t); G.preview._syncBody?.(); G.preview._updateContactShadow?.(_previewCtx); } _updateSky(G.preview.root.parent, t); } });
   // Rooms + room-waiting screens MUST heartbeat the network, otherwise MQTT
   // goes idle and rooms never get discovered/refreshed while the player sits
   // on those screens.
@@ -1299,15 +1425,31 @@ export function wireAll() {
 
   const click = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = () => { SFX.click(); fn(); }; };
 
-  click('btn-play', () => { shared.round = 1; G.data.fieldSize = 32; G.data.isRoomMatch = false; G.data.isHostSpectator = false; G.data.roomRounds = 3; enterLobby(); });
+  click('btn-play', () => { shared.round = 1; G.data.isRoomMatch = false; G.data.isHostSpectator = false; G.data.roomRounds = 3; enterLobby(); });
   click('btn-customize', enterCustomize);
   click('btn-rooms', enterRooms);
   click('btn-history', showHistory);
   click('cust-back', enterMenu);
+  // ---- Season 1 buttons ----
+  click('btn-season', () => TokenomicsModal.show('overview'));
+  click('btn-wallet', () => WithdrawModal.show());
+  // Clicking the $SP pill opens the wallet modal
+  const spPill = document.getElementById('sp-pill');
+  if (spPill) spPill.onclick = () => { SFX.click(); WithdrawModal.show(); };
+  // TokenomicsModal "OPEN WALLET" button dispatches this event
+  window.addEventListener('sp_open_wallet', () => WithdrawModal.show());
+  // WithdrawModal info button → open Tokenomics on the Prize Pool tab
+  window.addEventListener('sp_open_tokenomics_pool', () => TokenomicsModal.show('pool'));
+  // Initialize SP module (ensures localStorage fields exist)
+  SP.init();
   click('force-start', () => {
-    G.data.forceStart = true;
-    // if host of a private room, tell all peers to launch the match too
-    if (G.data.isRoomMatch && Net.roomMeta && Net.roomMeta.host) Net.announceRoomStart();
+    // Only meaningful for private room hosts now (public matches auto-start
+    // on quorum — no manual start button). The button is hidden in public
+    // lobbies, so reaching here means we're the room host.
+    if (G.data.isRoomMatch && Net.roomMeta && Net.roomMeta.host) {
+      G.data.forceStart = true;
+      Net.announceRoomStart();
+    }
   });
   document.querySelectorAll('.tab').forEach((tb) => tb.onclick = () => { SFX.click(); buildCustomGrid(tb.dataset.tab); });
 
@@ -1345,7 +1487,7 @@ export function wireAll() {
   const sm = document.getElementById('settings-modal');
   click('settings-btn', () => sm.classList.remove('hidden'));
   click('settings-close', () => sm.classList.add('hidden'));
-  click('logout-btn', () => { sm.classList.add('hidden'); Auth.logout(); shared.user = null; disposeActors(); disposeMap(); showAuth(); });
+  click('logout-btn', () => { sm.classList.add('hidden'); Auth.logout(); stopRealtimeSync(); shared.user = null; disposeActors(); disposeMap(); showAuth(); });
   const mt = document.getElementById('mute-toggle');
   mt.classList.toggle('on', !isMuted());
   mt.textContent = isMuted() ? 'OFF' : 'ON';
@@ -1361,10 +1503,19 @@ export function wireAll() {
     document.getElementById('auth-sol').style.display = authTab === 'register' ? '' : 'none';
   });
   document.getElementById('auth-sol').style.display = 'none';
-  document.getElementById('auth-submit').onclick = () => {
+  document.getElementById('auth-submit').onclick = async () => {
     SFX.click();
     const u = document.getElementById('auth-user').value, p = document.getElementById('auth-pass').value, sol = document.getElementById('auth-sol').value;
-    authResult(authTab === 'register' ? Auth.register(u, p, sol) : Auth.login(u, p));
+    const btn = document.getElementById('auth-submit');
+    btn.disabled = true;
+    try {
+      const r = authTab === 'register' ? await Auth.register(u, p, sol) : await Auth.login(u, p);
+      authResult(r);
+    } catch (e) {
+      authResult({ err: 'Network error — please retry' });
+    } finally {
+      btn.disabled = false;
+    }
   };
   document.getElementById('auth-pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('auth-submit').click(); });
 

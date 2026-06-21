@@ -32,10 +32,10 @@ export const EMOTES = [
 ];
 
 export const TRAILS = [
-  { k: 'rocket',  n: 'ROCKET',  e: '🚀', r: 'common' },
-  { k: 'fire',    n: 'FIRE',    e: '🔥', r: 'rare' },
-  { k: 'money',   n: 'MONEY',   e: '💸', r: 'epic' },
-  { k: 'rainbow', n: 'RAINBOW', e: '🌈', r: 'legendary' },
+  { k: 'rocket',  n: 'ROCKET',  e: '🚀', r: 'common',    col: 0xff6b00 }, // orange flame
+  { k: 'fire',    n: 'FIRE',    e: '🔥', r: 'rare',      col: 0xff3a1a }, // hot red
+  { k: 'money',   n: 'MONEY',   e: '💸', r: 'epic',      col: 0xa3e635 }, // lime green
+  { k: 'rainbow', n: 'RAINBOW', e: '🌈', r: 'legendary', col: 0xff5ca8 }, // pink (cycles hue live)
 ];
 
 export function randomBotSkin() {

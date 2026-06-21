@@ -43,10 +43,11 @@ function _roughForColor(color) {
 }
 
 export function toonMat(color) {
-  return new THREE.MeshStandardMaterial({
+  // Real cartoon shading: a 3-step gradient ramp gives the stylized banded look
+  // (was a plain MeshStandardMaterial that ignored gradientMap — dead code).
+  return new THREE.MeshToonMaterial({
     color,
-    roughness: 0.55,
-    metalness: 0.05,
+    gradientMap: gradientMap(),
   });
 }
 // lambertMat is the workhorse used by ~119 call sites. Upgraded from
@@ -59,7 +60,28 @@ export function lambertMat(color) {
     metalness: 0.0,
   });
 }
-export function basicMat(color) { return new THREE.MeshBasicMaterial({ color }); }
+// basicMat: previously MeshBasicMaterial (unlit, ignores IBL/sun/rim → read
+// as flat stickers on the glossy vinyl body). Now a bright MeshStandardMaterial
+// at near-zero roughness so eyes/mouth/accessories catch the environment map
+// and respond to lighting consistently with the rest of the rig. ~20 call sites
+// fixed in one place. For things that should GLOW (embers, LED lenses), use
+// emissiveMat() instead.
+export function basicMat(color) {
+  return new THREE.MeshStandardMaterial({
+    color,
+    roughness: 0.35,
+    metalness: 0.0,
+  });
+}
+// Emissive accent material — for things that should read as glowing sources
+// (cigar embers, HUD lenses, LED dots). The emissive channel is caught by the
+// bloom pass (threshold 0.95) so these pop without washing out the scene.
+export function emissiveMat(color, intensity = 0.85) {
+  return new THREE.MeshStandardMaterial({
+    color, roughness: 0.4, metalness: 0.0,
+    emissive: color, emissiveIntensity: intensity,
+  });
+}
 export function metalMat(color, metal = 0.9, rough = 0.15) {
   return new THREE.MeshStandardMaterial({ color, metalness: metal, roughness: rough });
 }

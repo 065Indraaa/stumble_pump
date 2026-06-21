@@ -201,21 +201,26 @@ export function buildMoonMission() {
     backdrop: 'moon',
     heightFn: (z) => { const u = z / L; return u * H + Math.sin(u * Math.PI * 4) * 2; },
     candles: false, tramps: 4,
+    // Pits narrowed (was 0.20-0.28 = 24u wide → edge-to-mover gap ~10.5u,
+    // exceeded flat-jump 8.5u). Now ~16u wide with deeper/slower movers so
+    // the jump from solid edge to the mover bridge is comfortably within a
+    // flat jump (no dive required).
     pits: [
-      { z0: L * 0.20, z1: L * 0.28 }, { z0: L * 0.38, z1: L * 0.46 },
-      { z0: L * 0.60, z1: L * 0.68 }, { z0: L * 0.78, z1: L * 0.84 },
+      { z0: L * 0.22, z1: L * 0.27 }, { z0: L * 0.39, z1: L * 0.45 },
+      { z0: L * 0.61, z1: L * 0.66 }, { z0: L * 0.79, z1: L * 0.84 },
     ],
     movers: [
-      { z: L * 0.24, x0: -7, x1: 7, sp: 0.8, color: SP_PALETTE.floor1 },
-      { z: L * 0.42, x0: 7, x1: -7, sp: 0.7, color: SP_PALETTE.terrain },
-      { z: L * 0.64, x0: -6, x1: 6, w: 3.5, d: 4, sp: 1.0, color: SP_PALETTE.floor1 },
-      { z: L * 0.81, x0: 6, x1: -6, w: 3.5, d: 4, sp: 1.1, color: SP_PALETTE.terrain },
+      { z: L * 0.245, x0: -7, x1: 7, w: 4.5, d: 5, sp: 0.6, color: SP_PALETTE.floor1 },
+      { z: L * 0.42,  x0: 7,  x1: -7, w: 4.5, d: 5, sp: 0.55, color: SP_PALETTE.terrain },
+      { z: L * 0.635, x0: -6, x1: 6, w: 4.5, d: 5, sp: 0.7, color: SP_PALETTE.floor1 },
+      { z: L * 0.815, x0: 6,  x1: -6, w: 4.5, d: 5, sp: 0.75, color: SP_PALETTE.terrain },
     ],
+    // Pendulum amplitudes trimmed now that hit-detection tracks the real swing
     pendulums: [
-      { z: L * 0.33, amp: 1.0, sp: 1.5 }, { z: L * 0.52, amp: 1.2, sp: 1.8 },
-      { z: L * 0.72, amp: 1.1, sp: 2.0 }, { z: L * 0.90, amp: 1.3, sp: 2.4 },
+      { z: L * 0.33, amp: 0.8, sp: 1.4 }, { z: L * 0.52, amp: 0.9, sp: 1.6 },
+      { z: L * 0.72, amp: 0.9, sp: 1.8 }, { z: L * 0.90, amp: 1.0, sp: 2.0 },
     ],
-    sweepers: [{ z: L * 0.15, sp: 2.0 }, { z: L * 0.55, sp: -2.5 }, { z: L * 0.88, sp: 3.0 }],
+    sweepers: [{ z: L * 0.15, sp: 1.8 }, { z: L * 0.55, sp: -2.2 }, { z: L * 0.88, sp: 2.6 }],
     finishText: 'MOON LANDED',
     killY: -45,
     buildDecor,

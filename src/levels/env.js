@@ -24,6 +24,60 @@ export function setSynthwaveBackground(clear = 0x0B0E1A, fog = 0x14233A) {
   scene.fog = new THREE.Fog(fog, 80, 280);
 }
 
+/**
+ * Procedural themed skydome — a large inward-facing sphere textured with a
+ * vertical gradient drawn on a canvas. This replaces the flat clear-color sky
+ * with a real atmospheric backdrop per arena (the single biggest visual gap:
+ * ARENA_BG PNGs were referenced but never shipped). Theme presets:
+ *   'grass'      → bright blue → pale (Bonding Curve)
+ *   'lobby'      → navy → twilight (Lobby)
+ *   'menu'       → deep navy → mint glow (Menu)
+ *   'moon'       → black space → deep indigo (Moon Mission)
+ *   'liquidation'→ dark red-black → ember glow (Liquidation Lane)
+ *   'rugpull'    → playful blue → mint (Rugpull Roulette)
+ * No external assets — always available, always on-theme.
+ */
+const _skyCache = {};
+export function makeSkyDome(theme = 'grass') {
+  if (_skyCache[theme]) return _skyCache[theme];
+  const cv = document.createElement('canvas');
+  cv.width = 64; cv.height = 256;
+  const cx = cv.getContext('2d');
+  const presets = {
+    grass:       [[0, '#4A90E2'], [0.45, '#87CEFA'], [0.75, '#BDE8FF'], [1, '#E8F6FF']],
+    lobby:       [[0, '#2A3A5E'], [0.5, '#1F2D4A'], [1, '#0E1830']],
+    menu:        [[0, '#1B2A4E'], [0.4, '#142244'], [1, '#0E1830']],
+    moon:        [[0, '#02030A'], [0.4, '#070B1A'], [0.8, '#0E1430'], [1, '#1A2348']],
+    liquidation: [[0, '#1A0606'], [0.4, '#2A0A04'], [0.8, '#4A1408'], [1, '#6A1C0A']],
+    rugpull:     [[0, '#5FCB88'], [0.4, '#4A90E2'], [1, '#BDE8FF']],
+  };
+  const stops = presets[theme] || presets.grass;
+  const grad = cx.createLinearGradient(0, 0, 0, cv.height);
+  stops.forEach(([off, col]) => grad.addColorStop(off, col));
+  cx.fillStyle = grad;
+  cx.fillRect(0, 0, cv.width, cv.height);
+  // Moon/space theme: scatter faint stars
+  if (theme === 'moon') {
+    cx.fillStyle = 'rgba(255,255,255,0.8)';
+    for (let i = 0; i < 60; i++) {
+      const x = Math.random() * cv.width, y = Math.random() * cv.height * 0.6;
+      const r = Math.random() * 1.2 + 0.3;
+      cx.globalAlpha = 0.4 + Math.random() * 0.6;
+      cx.fillRect(x, y, r, r);
+    }
+    cx.globalAlpha = 1;
+  }
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  // Large inward-facing sphere so the gradient wraps the whole sky
+  const geo = new THREE.SphereGeometry(600, 24, 16);
+  const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, fog: false, depthWrite: false });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.renderOrder = -100;   // always behind everything
+  _skyCache[theme] = mesh;
+  return mesh;
+}
+
 /** Mint-tinted grid floor (pump.fun tech-grid vibe, glow-free). */
 export function makeGridFloor(size = 400, y = -6, color = 0x2FAE6A) {
   const grid = new THREE.GridHelper(size, 40, 0x5FCB88, color);

@@ -1,13 +1,23 @@
 // ============================================================
-// STUMBLE PUMP — History store (match result log)
+// STUMBLE PUMP — History store (D1-backed)
+// Match results are recorded to + read from the Cloudflare D1 backend
+// (functions/api/history). All methods are async.
 // ============================================================
-import { LS_HISTORY } from '../config/constants.js';
+import { API } from './api.js';
 
 export const History = {
-  all() { try { return JSON.parse(localStorage.getItem(LS_HISTORY)) || []; } catch (e) { return []; } },
-  add(entry) {
-    const list = this.all();
-    list.unshift({ ...entry, date: entry.date || new Date().toISOString() });
-    localStorage.setItem(LS_HISTORY, JSON.stringify(list.slice(0, 50)));
+  /** Fetch the current user's match history (newest first, last 50). */
+  async all() {
+    const r = await API.getHistory();
+    return r.ok ? (r.history || []) : [];
+  },
+
+  /** Record a finished match. Returns the new match id. */
+  async add(entry) {
+    const r = await API.addHistory({
+      ...entry,
+      date: entry.date || new Date().toISOString(),
+    });
+    return r;
   },
 };

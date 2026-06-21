@@ -1,22 +1,43 @@
 # ============================================================
-# STUMBLE PUMP — Cloudflare Pages config
-# Deploy via:  npm run deploy
-# (requires `npm i -g wrangler` + `wrangler login` once)
+# STUMBLE PUMP — Cloudflare Pages + Functions + D1 config
 #
-# Alternatively: connect this repo to Cloudflare Pages dashboard
-# and use these settings:
-#   Build command:    npm run build
-#   Build output dir: dist
-#   Root directory:   /
+# SETUP (run once, interactively — the agent cannot do this for you):
+#   1. npx wrangler login                         # browser auth
+#   2. npx wrangler d1 create stumble-pump-db     # creates the DB
+#   3. Paste the printed `database_id` into [[d1_databases]] below.
+#   4. npx wrangler kv:namespace create SESSIONS  # creates the KV namespace
+#   5. Paste the printed `id` into [[kv_namespaces]] below.
+#   6. npx wrangler d1 execute stumble-pump-db --file=db/schema.sql
+#      npx wrangler d1 execute stumble-pump-db --env production --file=db/schema.sql
+#   7. Set the admin/session secret:
+#      npx wrangler pages secret put SESSION_SECRET
+#        (type a long random string when prompted)
+#
+# DEPLOY:
+#   npm run deploy
 # ============================================================
 
 name = "stumble-pump"
 compatibility_date = "2024-09-01"
 pages_build_output_dir = "dist"
 
-# Headers: ensure correct MIME types for WASM + long cache for hashed assets.
-# Cloudflare handles .wasm automatically, but we pin cache rules so the
-# 2MB Rapier blob is cached aggressively after first load.
+# ---- D1 database binding (fill database_id after step 2) ----
+[[d1_databases]]
+binding       = "DB"
+database_name = "stumble-pump-db"
+database_id   = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+# Use the same DB for preview + production. If you want a separate prod DB,
+# add a [[d1_databases]] entry under [env.production].
+
+# ---- KV namespace for session tokens (fill id after step 4) ----
+[[kv_namespaces]]
+binding = "SESSIONS"
+id      = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+
+# ---- Secrets (set via `wrangler pages secret put`, NOT here) ----
+# SESSION_SECRET  — signs/verifies session JWT-lite tokens
+# ADMIN_TOKEN     — bearer token for /api/admin/* endpoints
+
 [headers]
   # hashed JS/CSS/WASM — immutable cache (filename changes on content change)
   "/*.js"      = { Cache-Control = "public, max-age=31536000, immutable" }
@@ -28,3 +49,6 @@ pages_build_output_dir = "dist"
   "/textures/*" = { Cache-Control = "public, max-age=86400" }
   # index.html must always revalidate (entry point references latest hashed assets)
   "/index.html" = { Cache-Control = "public, max-age=0, must-revalidate" }
+
+# API routes run as Cloudflare Pages Functions (functions/api/*).
+# They receive env.DB (D1), env.SESSIONS (KV), env.SESSION_SECRET, env.ADMIN_TOKEN.

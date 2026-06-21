@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { scene, renderer } from '../core/Engine.js';
 import { lambertMat, metalMat } from '../core/AssetFactory.js';
-import { clearScene, make3DClouds, makeFloatingIslands, makeGroundDisc, makeHillsRing, makeForestScatter, makeBannerArch, makeFenceRing } from './env.js';
+import { clearScene, make3DClouds, makeFloatingIslands, makeGroundDisc, makeHillsRing, makeForestScatter, makeBannerArch, makeFenceRing, makeSkyDome } from './env.js';
 import { SP_PALETTE } from '../config/constants.js';
 
 // ── Geometry helpers ──────────────────────────────────────────────────────
@@ -37,6 +37,8 @@ export function buildLobby() {
   const group = new THREE.Group(); scene.add(group);
 
   // ── SKY ────────────────────────────────────────────────────────────────
+  // Real atmospheric skydome (gradient sphere) instead of a flat clear color.
+  scene.add(makeSkyDome('lobby'));
   group.add(make3DClouds(20, 160, 55));
   group.add(makeFloatingIslands(8, 130));
   // distant rolling hills ring fills the horizon

@@ -1,74 +1,64 @@
 // ============================================================
-// STUMBLE PUMP — Auth store (localStorage profile persistence)
-// Register / login / guest. Profile schema owns currency, skins,
-// stats. Ported from legacy Auth IIFE.
+// STUMBLE PUMP — Auth store (D1-backed)
+// register / login / me / save. All async against the Cloudflare D1 API.
+// Session token lives in sessionStorage (see store/api.js). D1-only: there is
+// no localStorage fallback — the game boots only after /api/health succeeds.
 // ============================================================
-import { LS_USERS, LS_SESSION } from '../config/constants.js';
+import { API } from './api.js';
 
-function hash(s) {
-  let h = 5381;
-  for (let i = 0; i < s.length; i++) h = (((h << 5) + h) ^ s.charCodeAt(i)) >>> 0;
-  return h.toString(36);
-}
-function users() { try { return JSON.parse(localStorage.getItem(LS_USERS)) || {}; } catch (e) { return {}; } }
-function saveUsers(u) { localStorage.setItem(LS_USERS, JSON.stringify(u)); }
-function newProfile(name) {
-  return {
-    name, level: 1, coins: 500, gems: 10,
-    skin: 'shiller', emote: 'dance', trail: 'rocket',
-    wins: 0, games: 0, guest: false, solana: '',
-    ownedSkins: ['shiller', 'devsus', 'trojan', 'paperhand'],
-  };
-}
+// ---- in-memory profile cache (synchronous reads for HUD) ----
+let _profile = null;
+export function profile() { return _profile; }
+export function setProfile(p) { _profile = p; }
 
-export function register(u, p, sol) {
+export async function register(u, p, sol) {
   u = (u || '').trim();
   if (u.length < 3) return { err: 'Username min 3 characters' };
   if ((p || '').length < 3) return { err: 'Password min 3 characters' };
-  const all = users();
-  if (all[u.toLowerCase()]) return { err: 'Username already taken' };
-  const prof = newProfile(u);
-  prof.solana = (sol || '').trim();
-  all[u.toLowerCase()] = { pass: hash(p), profile: prof };
-  saveUsers(all);
-  localStorage.setItem(LS_SESSION, u.toLowerCase());
-  return { ok: true, profile: prof };
+  const r = await API.register(u, p, sol);
+  if (r.err) return r;
+  _profile = r.profile;
+  return { ok: true, profile: r.profile };
 }
 
-export function login(u, p) {
+export async function login(u, p) {
   u = (u || '').trim();
-  const rec = users()[u.toLowerCase()];
-  if (!rec) return { err: 'No account with that name' };
-  if (rec.pass !== hash(p)) return { err: 'Wrong password' };
-  localStorage.setItem(LS_SESSION, u.toLowerCase());
-  return { ok: true, profile: rec.profile };
+  const r = await API.login(u, p);
+  if (r.err) return r;
+  _profile = r.profile;
+  return { ok: true, profile: r.profile };
+}
+
+export async function me() {
+  const r = await API.me();
+  if (r.err) return null;
+  _profile = r.profile;
+  return r.profile;
+}
+
+export async function save(prof) {
+  if (!prof || prof.guest) return;
+  // Persist only the mutable fields the server accepts
+  const r = await API.saveProfile({
+    skin: prof.skin, emote: prof.emote, trail: prof.trail,
+    coins: prof.coins, gems: prof.gems, level: prof.level,
+    wins: prof.wins, games: prof.games, solana: prof.solana,
+    owned_skins: prof.ownedSkins,
+  });
+  if (r.ok && r.profile) _profile = r.profile;
+  return r;
 }
 
 export function updateSolana(sol) {
-  const s = localStorage.getItem(LS_SESSION);
-  if (!s) return;
-  const all = users();
-  if (all[s]) { all[s].profile.solana = (sol || '').trim(); saveUsers(all); }
+  if (!_profile) return;
+  _profile.solana = (sol || '').trim();
+  return save(_profile);
 }
 
-export function guest() {
-  const prof = newProfile('Degen' + Math.floor(Math.random() * 9000 + 1000));
-  prof.guest = true;
-  return { ok: true, profile: prof };
+export function logout() {
+  API.logout();
+  _profile = null;
 }
 
-export function session() {
-  const s = localStorage.getItem(LS_SESSION);
-  if (!s) return null;
-  const rec = users()[s];
-  return rec ? rec.profile : null;
-}
-
-export function save(prof) {
-  if (!prof || prof.guest) return;
-  const all = users();
-  const k = prof.name.toLowerCase();
-  if (all[k]) { all[k].profile = prof; saveUsers(all); }
-}
-
-export function logout() { localStorage.removeItem(LS_SESSION); }
+// Keep the old session() name for callers that just want the cached profile
+export function session() { return _profile; }

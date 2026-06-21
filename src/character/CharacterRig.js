@@ -18,7 +18,7 @@
 //          this.trembling, this.sweatDrops, setFace(), dispose()
 // ============================================================
 import * as THREE from 'three';
-import { toonMat, basicMat, metalMat, pbrMat, addOutline } from '../core/AssetFactory.js';
+import { toonMat, basicMat, emissiveMat, metalMat, pbrMat, addOutline } from '../core/AssetFactory.js';
 import { SKINS } from './skins.js';
 
 // Shared glossy body material factory — vinyl/plastik look.
@@ -328,7 +328,7 @@ export class CharacterRig {
     cigar.rotation.z = Math.PI / 2; cigar.position.set(0.11, -0.13, 0.35); this.bones.head.add(cigar);
     const band = new THREE.Mesh(new THREE.CylinderGeometry(0.037, 0.037, 0.045, 14), metalMat(0xFFD23F, 0.9, 0.2));
     band.rotation.z = Math.PI / 2; band.position.set(0.05, -0.13, 0.35); this.bones.head.add(band);
-    const ember = new THREE.Mesh(new THREE.SphereGeometry(0.04, 10, 8), basicMat(0xFF5151));
+    const ember = new THREE.Mesh(new THREE.SphereGeometry(0.04, 10, 8), emissiveMat(0xFF5151, 1.2));
     ember.position.set(0.23, -0.13, 0.35); this.bones.head.add(ember);
 
     const frameMat = metalMat(0xFFD23F, 0.9, 0.1);
@@ -358,7 +358,7 @@ export class CharacterRig {
     brim.rotation.x = -Math.PI / 2; brim.position.set(0, 0.08, 0.30); this.bones.head.add(brim);
     const hud = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.05, 22), metalMat(0x11141F, 0.7, 0.3));
     hud.rotation.x = Math.PI / 2; hud.position.set(0.15, 0.04, 0.35); this.bones.head.add(hud);
-    const hudLens = new THREE.Mesh(new THREE.CircleGeometry(0.07, 22), basicMat(0xA3E635));
+    const hudLens = new THREE.Mesh(new THREE.CircleGeometry(0.07, 22), emissiveMat(0xA3E635, 1.0));
     hudLens.position.set(0.15, 0.04, 0.38); this.bones.head.add(hudLens);
     this.skinExtras.push(capBase, brim, hud, hudLens);
   }

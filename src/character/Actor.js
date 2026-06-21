@@ -16,7 +16,7 @@ import { addKinematicCapsule, removeBody, castRayDown } from '../core/PhysicsWor
 import { scene, MOBILE } from '../core/Engine.js';
 import { Input, readKeyboardMove } from '../core/InputManager.js';
 import { SFX } from '../core/AudioManager.js';
-import { spawnDust, spawnSpeedLines, spawnSpeedStreaks, FX, spawnShockwave, spawnEmoteBurst } from '../core/FX.js';
+import { spawnDust, spawnSpeedLines, spawnSpeedStreaks, FX, spawnShockwave, spawnEmoteBurst, spawnJumpDust, spawnHitBurst } from '../core/FX.js';
 import {
   GRAVITY, MOVE_SPEED, ACCEL, FRICTION, JUMP_VELOCITY,
   DIVE_SPEED, DIVE_LOCK, COYOTE_TIME, JUMP_BUFFER, CHARACTER_RADIUS,
@@ -57,6 +57,7 @@ export class Actor {
     this.respawns = 0;
     this.parked = false;
     this._isRealPeer = false;
+    this.trailKey = null;   // equipped trail (player-only; set by GameController)
 
     // Rapier kinematic capsule for collision queries (visual root drives position)
     this.body = addKinematicCapsule({
@@ -94,6 +95,8 @@ export class Actor {
     this.ragTimer = 0;
     this.ragdollCtrl.start(dir);
     if (this.isPlayer) { SFX.hit(); }
+    // hazard-hit debris burst at the impact point so the knock reads clearly
+    spawnHitBurst(this.pos, dir);
   }
 
   /** Decide desired move vector (camera-relative for player). */
@@ -167,6 +170,8 @@ export class Actor {
       this.grounded = false;
       this.anim.set('jump');
       SFX.jump();
+      // takeoff dust puff at the feet (mirrors the landing dust for symmetry)
+      spawnJumpDust(this.pos);
       this.jumpBuffer = 0;
       this.coyote = -1;
     }
@@ -291,15 +296,30 @@ export class Actor {
     const isEmoting = ['celebrate', 'dance', 'wave', 'taunt', 'point', 'flex', 'cry'].includes(this.anim.state);
     if (isEmoting && (moving || jumpReq)) this.anim.set('idle');
 
-    // shiller rocket trail
-    if (this.rig.skinKey === 'shiller' && this.anim.state === 'run' && FX.spark) {
+    // Player trail system (cosmetic). Emit colored spark particles behind the
+    // player while running. The shiller skin always gets its signature rocket
+    // flame; other players emit the trail they equipped in the Locker (rocket/
+    // fire/money/rainbow). Bots and unequipped players emit nothing.
+    const trailActive = (this.rig.skinKey === 'shiller' || this.trailKey) && this.anim.state === 'run' && FX.spark;
+    if (trailActive) {
       this.trailTimer -= dt;
       if (this.trailTimer <= 0) {
         this.trailTimer = 0.04;
+        const tk = this.trailKey || 'rocket';
+        // per-trail color + velocity profile
+        let col;
+        const tt = this.anim.t || 0;
+        if (tk === 'rainbow') {
+          const pal = [0xff6b00, 0xffd23f, 0xa3e635, 0x4f8cff, 0xa77bff, 0xff5ca8];
+          col = pal[Math.floor(tt * 8) % pal.length];
+        }
+        else if (tk === 'fire') col = Math.random() > 0.4 ? 0xff3a1a : 0xff8a3d;
+        else if (tk === 'money') col = Math.random() > 0.5 ? 0xa3e635 : 0x54d592;
+        else col = Math.random() > 0.5 ? 0xff6b00 : 0xffd700; // rocket (default)
         FX.spark.spawn(
           new THREE.Vector3(this.pos.x, this.pos.y + 0.4, this.pos.z),
           new THREE.Vector3((Math.random() - 0.5), 1.5, (Math.random() - 0.5)),
-          0.5, 0.8 + Math.random() * 0.4, Math.random() > 0.5 ? 0xff6b00 : 0xffd700
+          0.5, 0.8 + Math.random() * 0.4, col
         );
       }
     }

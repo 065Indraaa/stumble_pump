@@ -90,6 +90,12 @@
     <div id="currency">
       <div class="cur-pill"><span class="cur-ico gem"></span><span id="gem-count">128</span></div>
       <div class="cur-pill"><span class="cur-ico coin"></span><span id="coin-count">9,420</span></div>
+      <!-- $SP Season 1 balance pill -->
+      <div class="cur-pill sp-pill" id="sp-pill" title="Your $SP balance">
+        <span class="sp-icon">💎</span>
+        <span id="sp-count">0</span>
+        <span class="sp-label">$SP</span>
+      </div>
       <button id="settings-btn" class="icon-btn" aria-label="Settings"></button>
     </div>
   </div>
@@ -145,6 +151,8 @@
   <div id="bottom-nav">
     <button id="btn-customize" class="nav-btn secondary"><span class="bn-ico locker"></span><span>LOCKER</span></button>
     <button id="btn-rooms" class="nav-btn secondary"><span class="bn-ico rooms"></span><span>ROOMS</span></button>
+    <button id="btn-season" class="nav-btn secondary sp-season-btn"><span>💎</span><span>TOKENOMICS</span></button>
+    <button id="btn-wallet" class="nav-btn secondary sp-wallet-btn"><span>💰</span><span>WALLET</span></button>
   </div>
 </div>
 
@@ -256,7 +264,7 @@
 <div id="lobby-ui" class="screen hidden">
   <div id="player-counter" class="hud-pill big">PLAYERS: <span id="lobby-count">1</span>/32</div>
   <div id="net-status" class="hud-pill subtle">Connecting to lobby server…</div>
-  <button id="force-start" class="nav-btn primary small hidden">START WITH BOTS</button>
+  <button id="force-start" class="nav-btn primary small hidden">START MATCH</button>
   <div id="countdown-overlay" class="hidden">MATCH STARTING IN <span id="lobby-cd">5</span></div>
   <div id="emote-hint" class="hud-pill subtle">Press <b>E</b> to emote · <b>WASD</b> move · <b>SPACE</b> jump</div>
 </div>
@@ -295,6 +303,8 @@
   <canvas id="minimap" width="120" height="120"></canvas>
   <div id="big-countdown" class="hidden">3</div>
   <div id="action-banner" class="hidden"></div>
+  <!-- $SP floating reward (shown on win) -->
+  <div id="sp-reward" class="hidden" aria-live="polite"></div>
   <div id="mobile-controls" class="hidden">
     <div id="joystick"><div id="joy-knob"></div></div>
     <div id="action-buttons">

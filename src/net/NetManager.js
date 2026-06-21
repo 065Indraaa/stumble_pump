@@ -167,6 +167,12 @@ function beatRoom(force = false) {
 }
 
 // ---- Matchmaking: auto-pick or create a public room for PLAY button ----
+// Fill-fullest-first: pick the non-hosted public room with the MOST players
+// that still has a free slot. This consolidates players into fuller rooms
+// (better matches) instead of the old first-match behavior. If none has
+// space, create a new room. If our currently-chosen room fills up or starts
+// before we get in, the lobby update loop will re-call this to route us
+// elsewhere (see GameController.updateLobby).
 function joinMatchmaking() {
   if (!connected || !client) return null;
   const roomCounts = {};
@@ -175,8 +181,13 @@ function joinMatchmaking() {
     if (rp.host) continue; // don't pile into hosted rooms from quick-play
     roomCounts[rp.roomId] = (roomCounts[rp.roomId] || 0) + 1;
   }
+  // Pick the FULLEST room with a free slot (descending count), not first-match.
   let chosenRoom = null;
-  for (const rid in roomCounts) { if (roomCounts[rid] < MAX_ROOM) { chosenRoom = rid; break; } }
+  let chosenCount = -1;
+  for (const rid in roomCounts) {
+    const c = roomCounts[rid];
+    if (c < MAX_ROOM && c > chosenCount) { chosenRoom = rid; chosenCount = c; }
+  }
   if (!chosenRoom) chosenRoom = 'qp_' + Math.random().toString(36).slice(2, 8);
   myRoomId = chosenRoom;
   myRoomMeta = { name: 'Quick Play', max: MAX_ROOM, rounds: 3, start: null, host: false };

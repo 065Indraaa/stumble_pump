@@ -14,7 +14,7 @@ import { scene, renderer, camera } from '../core/Engine.js';
 import { lambertMat, basicMat, makeBillboard } from '../core/AssetFactory.js';
 import {
   clearScene, make3DClouds, makeFloatingIslands, make3DTileFloor,
-  makeTree, makeBush, makeRock, makeHillsRing, spawnGrid,
+  makeTree, makeBush, makeRock, makeHillsRing, spawnGrid, makeSkyDome,
 } from './env.js';
 import { makeRedCandle, updateRedCandle } from '../entities/RedCandle.js';
 import { makeGreenTrampoline, updateGreenTrampoline, BOUNCE_VELOCITY } from '../entities/GreenTrampoline.js';
@@ -42,6 +42,11 @@ export function buildRaceCourse(cfg) {
   scene.add(group);
   const L = cfg.L, W = cfg.W, H = cfg.H;
   const heightFn = (z) => cfg.heightFn(THREE.MathUtils.clamp(z, 0, L));
+
+  // Themed skydome (gradient sphere) — replaces the flat clear-color sky with
+  // a real atmospheric backdrop. Theme tracks the arena backdrop so a moon map
+  // gets a starfield and a lava map gets an ember glow.
+  scene.add(makeSkyDome(backdrop === 'moon' ? 'moon' : backdrop === 'liquidation' ? 'liquidation' : 'grass'));
 
   // 3D Procedural Sky Elements — backdrop-aware so a space map doesn't get
   // fluffy white clouds and a lava map doesn't get green floating islands.
@@ -209,7 +214,11 @@ export function buildRaceCourse(cfg) {
   // ---- obstacles ----
   const candles = []; let candleTimer = 1.5;
   function spawnRedCandle() {
+    // Spawn near the far end and roll toward the player. Cap vz so candles
+    // never outrun a sprinting player (MOVE_SPEED=8.5) — they're a dodgeable
+    // hazard, not an unavoidable one. Was -(6+rand*5) (6–11, 33% too fast).
     const c = makeRedCandle((Math.random() - 0.5) * W * 1.7, heightFn(L * 0.9) + 3, L * 0.9);
+    if (c.vz !== undefined) c.vz = -(5 + Math.random() * 3); // 5–8, at/below run speed
     group.add(c.grp); candles.push(c);
   }
   if (cfg.candles) { for (let i = 0; i < 5; i++) spawnRedCandle(); }
@@ -259,12 +268,12 @@ export function buildRaceCourse(cfg) {
     if (z < -6 || z > L + 6) return null;
     // mover surfaces bridge pits
     for (const mv of movers) {
-      if (Math.abs(z - mv.z) < mv.d / 2 && Math.abs(x - mv.x) < mv.w / 2) return mv.y + 0.5;
+      if (Math.abs(z - mv.z) < mv.d / 2 + 0.35 && Math.abs(x - mv.x) < mv.w / 2 + 0.35) return mv.y + 0.5;
     }
     // pits = fall through
     for (const p of pits) {
       const halfW = p.halfW ?? (W + 1);
-      if (z > p.z0 && z < p.z1 && Math.abs(x) < halfW) return null;
+      if (z > p.z0 + 0.35 && z < p.z1 - 0.35 && Math.abs(x) < halfW) return null;
     }
     return heightFn(z);
   }
@@ -276,7 +285,7 @@ export function buildRaceCourse(cfg) {
   function isPitAt(x, z) {
     for (const p of pits) {
       const halfW = p.halfW ?? (W + 1);
-      if (z > p.z0 && z < p.z1 && Math.abs(x) < halfW) return true;
+      if (z > p.z0 + 0.35 && z < p.z1 - 0.35 && Math.abs(x) < halfW) return true;
     }
     return false;
   }
@@ -334,11 +343,25 @@ export function buildRaceCourse(cfg) {
       }
     }
     // pendulum ball -> ragdoll
+    // The ball swings with piv.rotation.x = sin(t*sp+ph)*amp on a ropeLen=6
+    // chain, so its live world Z offset is -6*sin(angle) and Y is baseY-6*cos.
+    // Hit detection now tracks the ACTUAL swinging ball position (was static
+    // at the pivot — misleading visual). Amplitudes are tuned per-level to
+    // keep this fair.
+    const ROPE = 6;
     for (const p of pendulums) {
-      const ballY = p.baseY + Math.sin(p.piv.rotation.x) * 0 - 6;
-      const dx = ax - p.x, dy = ay - (p.baseY - 6), dz = az - p.z;
-      if (dx * dx + dz * dz < 2.4 && Math.abs(dy) < 2) {
-        if (!a.ragdoll) a.startRagdoll(new THREE.Vector3(dx, 1, dz).normalize());
+      const ang = p.piv.rotation.x;
+      const ballZ = p.z - ROPE * Math.sin(ang);
+      const ballY = p.baseY - ROPE * Math.cos(ang);
+      const dx = ax - p.x, dy = ay - ballY, dz = az - ballZ;
+      // ball radius ~1.15 + small forgiveness; only hit when the ball is
+      // low enough to actually reach the player (cos(ang) close to 1).
+      if (dx * dx + dz * dz < 2.6 && Math.abs(dy) < 1.8 && Math.cos(ang) > 0.55) {
+        if (!a.ragdoll) {
+          // push direction: away from the ball's swing direction
+          const pushZ = Math.cos(ang) >= 0 ? 1 : -1;
+          a.startRagdoll(new THREE.Vector3(dx, 1, dz + pushZ).normalize());
+        }
       }
     }
     // finish line qualification
