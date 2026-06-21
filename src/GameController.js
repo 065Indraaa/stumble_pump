@@ -11,7 +11,7 @@ import { initFX, updateFX, spawnConfettiBurst } from './core/FX.js';
 import { SFX, startAmbient, stopAmbient, isMuted, setMute as setAudioMute } from './core/AudioManager.js';
 import { setMusicMode, stopMusic } from './core/MusicManager.js';
 import { state as G, register, showScreen, setMode, tick as smTick, disposeActors, disposeMap } from './core/SceneManager.js';
-import { Input } from './core/InputManager.js';
+import { Input, setTouchScreenMode } from './core/InputManager.js';
 import { Net } from './net/NetManager.js';
 import * as Auth from './store/auth.js';
 import { Rooms, roomCountdownStr } from './store/rooms.js';
@@ -1385,7 +1385,8 @@ function initEmoteWheel() {
     // populate 6 slices arranged radially
     ring.innerHTML = '';
     const n = EMOTES.length;
-    const R = 95; // px radius from center
+    // responsive radius: smaller on narrow phones so slices stay tappable
+    const R = window.innerWidth < 600 ? 78 : 95; // px radius from center
     EMOTES.forEach((em, i) => {
       const ang = (i / n) * Math.PI * 2 - Math.PI / 2; // start at top
       const x = Math.cos(ang) * R, y = Math.sin(ang) * R;

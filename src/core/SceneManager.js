@@ -7,6 +7,7 @@
 // gameplay layer. This module only owns transitions + DOM screen show/hide.
 // ============================================================
 import { MOBILE } from './Engine.js';
+import { setTouchScreenMode as _setTouchMode } from './InputManager.js';
 
 const SCREENS = [
   'auth-screen', 'main-menu', 'customize', 'lobby-ui', 'roulette-ui',
@@ -47,6 +48,10 @@ export function setMode(mode) {
   if (prev?.exit) { try { prev.exit(); } catch (e) { console.warn(e); } }
   state.mode = mode;
   state.modeT = 0;
+  // Enable touch controls (joystick + drag-camera) ONLY in lobby/match.
+  // On menu/customize/rooms/roulette/result the touch handlers stay off so
+  // taps on those screens don't spawn a ghost joystick or rotate the camera.
+  _setTouchMode(mode === 'lobby' || mode === 'match');
   const next = hooks[mode];
   if (next?.enter) { try { next.enter(); } catch (e) { console.warn(e); } }
 }

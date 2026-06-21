@@ -75,20 +75,28 @@ let joyEl = null, knobEl = null, joyId = null, joyCx = 0, joyCy = 0;
 const JOY_R = 56;
 // right-half touch-drag camera state (separate touch id from joystick)
 let camId = null, camLastX = 0, camLastY = 0;
+// Which game modes allow the joystick + touch-camera. Set by GameController
+// via setTouchScreenMode() so taps on the menu/customize/rooms screens
+// don't spawn a ghost joystick or rotate the camera.
+let touchScreenMode = false;
+export function setTouchScreenMode(on) { touchScreenMode = !!on; }
 
 export function initMobileControls() {
   if (!MOBILE) return;
   joyEl = document.getElementById('joystick');
   knobEl = document.getElementById('joy-knob');
   if (!joyEl) return;
-  // touchstart: left half → joystick; right half (not on a button) → camera drag
+  // touchstart: left half → joystick; right half (not on a button) → camera drag.
+  // Both are GATED by touchScreenMode so they only fire in lobby/match,
+  // never on menu/customize/rooms (where they'd spawn a ghost joystick).
   window.addEventListener('touchstart', (e) => {
+    if (!touchScreenMode) return;
     for (const t of e.changedTouches) {
       const onLeft = t.clientX < window.innerWidth * 0.5;
       if (onLeft && !Input.joy.active) {
         Input.joy.active = true; joyId = t.identifier;
         joyCx = t.clientX; joyCy = t.clientY;
-        if (joyEl) { joyEl.style.left = (t.clientX - 70) + 'px'; joyEl.style.top = (t.clientY - 70) + 'px'; joyEl.style.display = 'flex'; }
+        if (joyEl) { joyEl.style.left = (t.clientX - 55) + 'px'; joyEl.style.top = (t.clientY - 55) + 'px'; joyEl.style.display = 'flex'; }
       } else if (!onLeft && camId === null) {
         // only grab the right-half touch if it didn't land on an action button
         const target = document.elementFromPoint(t.clientX, t.clientY);
@@ -98,6 +106,7 @@ export function initMobileControls() {
     }
   }, { passive: true });
   window.addEventListener('touchmove', (e) => {
+    if (!touchScreenMode) return;
     for (const t of e.touches) {
       // joystick move
       if (Input.joy.active && t.identifier === joyId) {

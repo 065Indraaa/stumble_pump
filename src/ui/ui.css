@@ -412,9 +412,13 @@ h1,h2,h3,.fred{font-family:'Fredoka One',cursive;}
 @keyframes bannerPop{0%{transform:translate(-50%,-50%) scale(.4);opacity:0;}25%{transform:translate(-50%,-50%) scale(1.1);opacity:1;}80%{opacity:1;}100%{transform:translate(-50%,-50%) scale(1);opacity:0;}}
 
 /* ===== MOBILE CONTROLS ===== */
-#mobile-controls{position:absolute;bottom:0;left:0;right:0;display:flex;justify-content:space-between;align-items:flex-end;padding:calc(14px + var(--safe-bot)) calc(14px + var(--safe-right)) calc(14px + var(--safe-left));pointer-events:none;}
+#mobile-controls{position:absolute;bottom:0;left:0;right:0;display:flex;justify-content:space-between;align-items:flex-end;padding:calc(14px + var(--safe-bot)) calc(14px + var(--safe-right)) calc(14px + var(--safe-bot));pointer-events:none;}
 #mobile-controls>*{pointer-events:auto;}
-#joystick{width:110px;height:110px;border-radius:50%;background:rgba(20,23,33,0.5);border:3px solid rgba(95,203,136,0.45);position:relative;touch-action:none;flex-shrink:0;}
+/* Joystick is a FLOATING element: InputManager positions it at the touch
+   point (style.left/top) and shows/hides it. Must be position:fixed so
+   left/top actually move it, display:none by default, and pointer-events:none
+   so it never steals the touch that created it. */
+#joystick{width:110px;height:110px;border-radius:50%;background:rgba(20,23,33,0.5);border:3px solid rgba(95,203,136,0.45);position:fixed;display:none;touch-action:none;flex-shrink:0;pointer-events:none;z-index:40;transform:translateZ(0);}
 #joy-knob{width:46px;height:46px;border-radius:50%;background:linear-gradient(180deg,var(--mint),var(--mint-dk));position:absolute;top:32px;left:32px;box-shadow:var(--shadow-card);transition:transform .05s;}
 #action-buttons{display:flex;align-items:flex-end;gap:10px;flex-shrink:0;}
 .action-btn{width:58px;height:58px;border-radius:50%;border:none;font-family:'Fredoka One',cursive;font-size:13px;color:#06121A;cursor:pointer;box-shadow:var(--shadow-btn);touch-action:none;}
@@ -632,16 +636,18 @@ h1,h2,h3,.fred{font-family:'Fredoka One',cursive;}
      - character stage fills the middle (canvas behind shows the 3D scene)
      - PLAY button docked at bottom above the nav buttons
      Everything stacks in distinct rows; no absolute overlaps. */
-  #main-menu .menu-content{grid-template-columns:1fr;grid-template-rows:auto 1fr;padding:2px 6px;gap:4px;overflow:hidden;}
+  #main-menu .menu-content{grid-template-columns:1fr;grid-template-rows:auto 1fr;padding:2px 6px;gap:3px;overflow:hidden;}
   #left-panel{display:none;}
-  #right-panel{padding:8px 10px;order:1;min-height:0;}
+  /* Compact the map strip so the character stage gets max vertical room */
+  #right-panel{padding:6px 8px;order:1;min-height:0;box-shadow:0 4px 0 var(--border-light),0 6px 14px rgba(0,0,0,0.15);}
+  #right-panel::before{display:none;}  /* hide mint rail on the thin strip */
   #right-panel .panel-title{display:none;}
-  #map-rail-list{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;}
-  .map-card{padding:5px 6px;gap:5px;flex-direction:column;text-align:center;border-radius:10px;}
+  #map-rail-list{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;}
+  .map-card{padding:4px 5px;gap:4px;flex-direction:column;text-align:center;border-radius:10px;}
   .mc-ico{width:24px;height:24px;}
   .mc-name{font-size:9px;line-height:1.1;}
   .mc-type{font-size:7px;margin-top:1px;}
-  .online-pill{margin-top:6px;font-size:9px;padding:4px 8px;justify-content:center;}
+  .online-pill{margin-top:4px;font-size:9px;padding:3px 8px;justify-content:center;}
   #menu-stage{order:2;justify-content:space-between;padding:4px 0 8px;min-height:0;gap:4px;}
   /* hide the hero brand on mobile portrait — top bar already shows identity,
      and space is tight; keep the character + PLAY visible. */
@@ -684,12 +690,18 @@ h1,h2,h3,.fred{font-family:'Fredoka One',cursive;}
      drops under the top-right corner so the two never collide with FPS/ping. */
   .hud-tc .hud-pill{font-size:12px;padding:5px 12px;}
   .hud-tr{gap:4px;}
-  /* keep the lobby HUD pills from wrapping wide in portrait */
-  #net-status{max-width:84vw;font-size:11px;}
-  /* minimap tucked bottom-right above the action buttons, smaller in portrait */
-  #minimap{width:78px;height:78px;bottom:calc(96px + var(--safe-bot));right:calc(8px + var(--safe-right));}
-  #race-progress{width:140px;top:calc(48px + var(--safe-top));left:calc(8px + var(--safe-left));}
-  #objective-badge{font-size:10px;padding:4px 10px;top:calc(48px + var(--safe-top));max-width:130px;}
+  /* ---- LOBBY pills: tightened vertical offsets so they never overlap
+     when text wraps. Single-line enforced via white-space + ellipsis. ---- */
+  #net-status{max-width:80vw;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;top:calc(44px + var(--safe-top));}
+  #player-counter{top:calc(12px + var(--safe-top));}
+  #force-start{top:calc(76px + var(--safe-top));}
+  /* ---- MATCH HUD top row (portrait): stack to avoid 3-way collision.
+     Row 1 (top:8px): hud-tl (left), qualify (center), hud-tr (right).
+     Row 2 (top:60px): race-progress (left, 110px), objective-badge (right).
+     FPS/ping stacked column ends ~56px, so row 2 starts at 64px to clear it. ---- */
+  #minimap{width:72px;height:72px;bottom:calc(108px + var(--safe-bot));right:calc(8px + var(--safe-right));}
+  #race-progress{width:110px;top:calc(64px + var(--safe-top));left:calc(8px + var(--safe-left));}
+  #objective-badge{font-size:9px;padding:3px 8px;top:calc(64px + var(--safe-top));max-width:96px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .action-btn{width:58px;height:58px;font-size:13px;}
   .action-btn.big{width:72px;height:72px;font-size:16px;}
   .action-btn.small{width:46px;height:46px;font-size:16px;}
@@ -709,9 +721,23 @@ h1,h2,h3,.fred{font-family:'Fredoka One',cursive;}
   .action-btn{width:52px;height:52px;font-size:12px;}
   .action-btn.big{width:64px;height:64px;font-size:14px;}
   .action-btn.small{width:42px;height:42px;font-size:14px;}
-  #minimap{width:66px;height:66px;}
+  #minimap{width:60px;height:60px;bottom:calc(100px + var(--safe-bot));}
   #mobile-controls{padding:calc(10px + var(--safe-bot)) 8px;}
   .nav-btn.mega{padding:12px 48px;font-size:20px;}
+  /* emote wheel shrinks on very narrow phones so slices stay tappable */
+  .rc-stage,.ew-ring{width:200px;height:200px;}
+  .ew-slice{width:56px;height:56px;margin:-28px;}
+}
+
+/* Emote wheel responsive — shrink for portrait so the 6 slices stay tappable
+   and the ring doesn't overlap the mobile controls. */
+@media(max-width:600px){
+  .rc-stage{width:280px;height:190px;}
+  .ew-ring{width:210px;height:210px;}
+  .ew-slice{width:60px;height:60px;margin:-30px;}
+  .ew-emoji{font-size:24px;}
+  .ew-name{font-size:7px;}
+  .ew-hint{bottom:calc(50% - 140px);}
 }
 
 /* ===== RESPONSIVE — TABLET/DESKTOP ===== */
