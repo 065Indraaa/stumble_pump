@@ -1,1 +1,15 @@
+# SPA fallback — but ONLY for routes, not for real files.
+# Without the exclusions, a missing /assets/*.js would silently return
+# index.html (text/html) → "MIME type text/html not supported" error.
+# This way, asset 404s fail loudly (so you know the build is broken),
+# while client-side routes still work.
+/assets/*    /assets/:splat    200
+/mqtt.min.js    /mqtt.min.js    200
+/textures/*    /textures/:splat    200
+/*.js    /:splat.js    200
+/*.css    /:splat.css    200
+/*.wasm    /:splat.wasm    200
+/*.png    /:splat.png    200
+/*.jpeg    /:splat.jpeg    200
+/*.webmanifest    /:splat.webmanifest    200
 /*    /index.html   200
